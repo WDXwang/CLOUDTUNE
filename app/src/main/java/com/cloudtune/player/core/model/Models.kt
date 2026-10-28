@@ -1,0 +1,90 @@
+package com.cloudtune.player.core.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * 云端后端类型。
+ * - [WEBDAV]：连接自建 AList（或任意 WebDAV 服务），默认且推荐，风险隔离在服务端。
+ * - [TIANYI_DIRECT]：App 内直连天翼云盘非官方 Web API（实验性，使用粘贴 Cookie 登录）。
+ */
+@Serializable
+enum class BackendType { WEBDAV, TIANYI_DIRECT }
+
+/**
+ * 服务器 / 账号配置。不同后端只使用其中一部分字段。
+ *
+ * WebDAV 字段：
+ * @param baseUrl 服务器根地址，例如 http://192.168.1.10:5244
+ * @param davPath WebDAV 路径，AList 默认为 /dav
+ * @param username Basic Auth 用户名（AList 后台用户名）
+ * @param password Basic Auth 密码（AList 后台密码）
+ * @param rootPath 起始浏览目录（相对 davPath），例如 / 或 /音乐
+ *
+ * 天翼直连字段：
+ * @param tianyiCookie 从浏览器登录 cloud.189.cn 后复制的 Cookie 字符串（legacy，绑定 IP）
+ * @param tianyiSessionKey 扫码登录后换到的签名会话 key（推荐，不绑定 IP）
+ * @param tianyiSessionSecret 签名会话 secret
+ * @param tianyiAccessToken 会话刷新用 token
+ * @param tianyiRefreshToken token 续期用 refreshToken
+ * @param tianyiRootFolderId 个人云根目录文件夹 ID，默认 -11
+ */
+@Serializable
+data class ServerConfig(
+    val backend: BackendType = BackendType.WEBDAV,
+    val baseUrl: String = "",
+    val davPath: String = "/dav",
+    val username: String = "",
+    val password: String = "",
+    val rootPath: String = "/",
+    val tianyiCookie: String = "",
+    val tianyiRootFolderId: String = "-11",
+    val tianyiSessionKey: String = "",
+    val tianyiSessionSecret: String = "",
+    val tianyiAccessToken: String = "",
+    val tianyiRefreshToken: String = "",
+)
+
+/**
+ * 云端文件 / 文件夹的统一抽象。
+ *
+ * id 的含义随后端不同：
+ * - WebDAV：相对 davPath 的完整 href 路径，例如 /音乐/专辑/01.mp3
+ * - 天翼直连：文件（夹）数字 ID
+ */
+@Serializable
+data class CloudFile(
+    val id: String,
+    val name: String,
+    val path: String,
+    val isDir: Boolean,
+    val size: Long = 0L,
+    val lastModified: Long = 0L,
+    val mimeType: String? = null,
+    val isLocal: Boolean = false,
+) {
+    /** 是否为可播放的音乐文件（按扩展名判断） */
+    fun isMusic(): Boolean = !isDir && com.cloudtune.player.core.util.MusicUtils.isMusicFile(name)
+}
+
+/**
+ * 一首可播放的音轨（界面与播放器使用）。
+ */
+@Serializable
+data class MusicTrack(
+    val file: CloudFile,
+    val title: String,
+    val artist: String? = null,
+    val album: String? = null,
+    val durationMs: Long = 0L,
+)
+
+/**
+ * 已解析的播放源：真实可请求的 URL 与所需请求头。
+ *
+ * 直链通常有较短有效期，因此应“播放前现取现用”，不要长期缓存。
+ */
+data class StreamSource(
+    val url: String,
+    val headers: Map<String, String> = emptyMap(),
+    val mimeType: String? = null,
+)
