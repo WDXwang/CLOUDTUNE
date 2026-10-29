@@ -50,6 +50,8 @@ class PlaybackService : MediaSessionService() {
         val exoPlayer = ExoPlayer.Builder(this)
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
+            .setSeekBackIncrementMs(10_000)
+            .setSeekForwardIncrementMs(10_000)
             .build()
         // 把播放器音频输出固定到上面分配的会话（Media3 在 ExoPlayer 上设置会话 id）
         exoPlayer.setAudioSessionId(audioSessionId)

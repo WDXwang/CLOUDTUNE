@@ -139,9 +139,12 @@ class PlayerControllerManager(
         val items = ArrayList<QueueItemUi>(c.mediaItemCount)
         for (i in 0 until c.mediaItemCount) {
             val mi = c.getMediaItemAt(i)
+            val dur = mi.mediaMetadata.durationMs.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L
             items += QueueItemUi(
                 mediaId = mi.mediaId,
                 title = mi.mediaMetadata.title?.toString() ?: "",
+                artist = mi.mediaMetadata.artist?.toString() ?: "",
+                durationMs = dur,
                 isCurrent = i == currentIndex,
                 // 当前项且正在播放时才高亮“播放中”
                 isPlaying = c.isPlaying && i == currentIndex,
@@ -185,6 +188,12 @@ class PlayerControllerManager(
     fun next() { controller?.seekToNext() }
 
     fun previous() { controller?.seekToPrevious() }
+
+    /** 快退 15 秒（ExoPlayer 已配置 seekBackIncrementMs=15000）。 */
+    fun seekBack() { controller?.seekBack() }
+
+    /** 快进 15 秒。 */
+    fun seekForward() { controller?.seekForward() }
 
     fun seekTo(positionMs: Long) { controller?.seekTo(positionMs) }
 
