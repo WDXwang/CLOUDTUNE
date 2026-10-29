@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
@@ -77,6 +78,7 @@ fun SettingsScreen(
         // 音效：均衡器入口
         Card(
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
             onClick = onOpenEqualizer,
         ) {
             Row(
@@ -108,6 +110,7 @@ fun SettingsScreen(
         // 历史播放记录入口
         Card(
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
             onClick = onOpenHistory,
         ) {
             Row(
@@ -137,7 +140,7 @@ fun SettingsScreen(
         Spacer(Modifier.height(16.dp))
 
         // 服务器信息卡片
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Text(
                     "当前连接",
@@ -152,7 +155,7 @@ fun SettingsScreen(
         Spacer(Modifier.height(16.dp))
 
         // 账号操作：退出登录
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Text("账号", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
@@ -174,7 +177,7 @@ fun SettingsScreen(
         Spacer(Modifier.height(16.dp))
 
         // 风险与免责说明（天翼云盘非官方接入）
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Text(
                     "风险提示与免责声明",
@@ -197,13 +200,13 @@ fun SettingsScreen(
         Spacer(Modifier.height(16.dp))
 
         // 关于
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Text("关于", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 Text("CloudTune · 云盘音乐", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "版本 1.2.0",
+                    "版本 1.3.0",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

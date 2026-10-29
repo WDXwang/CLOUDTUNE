@@ -59,18 +59,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cloudtune.player.core.util.MusicUtils
-import com.cloudtune.player.ui.theme.GradientOrange
-import com.cloudtune.player.ui.theme.GradientPurple
-import com.cloudtune.player.ui.theme.GradientRed
 
-// 播放页强制深色科技感（霓虹青 + 发光）
-private val PlayerBg = Color(0xFF070B14)
-private val CardBg = Color(0xFF101826)
-private val MainText = Color(0xFFE6F1FF)
-private val SubText = Color(0xFF7C8AA5)
-private val Accent = Color(0xFF22D3EE)
-private val Accent2 = Color(0xFF38BDF8)
-private val NeonBorder = Color(0xFF1E3A52)
+// 播放页强制深色 One UI 9 风格（纯黑 + 柔蓝紫 + 大圆角）
+private val PlayerBg = Color(0xFF000000)
+private val CardBg = Color(0xFF16181D)
+private val MainText = Color(0xFFF3F4F6)
+private val SubText = Color(0xFF9CA1AB)
+private val Accent = Color(0xFF8B9CFF)
+private val Accent2 = Color(0xFF5A7CFF)
+private val NeonBorder = Color(0xFF2A2D35)
 
 /**
  * 全屏播放器界面（深色、内嵌播放列表风格）。
@@ -107,14 +104,14 @@ fun PlayerScreen(
             .fillMaxSize()
             .background(PlayerBg),
     ) {
-        // 顶部霓虹光晕（科技感氛围光）
+        // 顶部柔和光晕（One UI 氛围）
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(340.dp)
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(Accent.copy(alpha = 0.22f), Color.Transparent),
+                        colors = listOf(Accent.copy(alpha = 0.15f), Color.Transparent),
                     )
                 ),
         )
@@ -150,21 +147,21 @@ fun PlayerScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // ===== 横向封面卡片（霓虹边框 + 科技渐变） =====
+        // ===== 横向封面卡片（大圆角 + 柔蓝紫渐变） =====
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(200.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF0E2439), Color(0xFF0B4A6B), Accent2.copy(alpha = 0.55f))))
-                .border(1.dp, Accent.copy(alpha = 0.55f), RoundedCornerShape(20.dp)),
+                .clip(RoundedCornerShape(28.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF232A4A), Color(0xFF4A5FBF), Color(0xFF8B9CFF))))
+                .border(1.dp, NeonBorder, RoundedCornerShape(28.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Filled.MusicNote,
                 contentDescription = null,
                 modifier = Modifier.size(80.dp),
-                tint = Accent.copy(alpha = 0.95f),
+                tint = Color.White.copy(alpha = 0.92f),
             )
         }
 
@@ -241,7 +238,6 @@ fun PlayerScreen(
             Box(
                 modifier = Modifier
                     .size(68.dp)
-                    .shadow(20.dp, CircleShape, ambientColor = Accent, spotColor = Accent)
                     .clip(CircleShape)
                     .background(Brush.linearGradient(listOf(Accent, Accent2)))
                     .clickable { vm.togglePlay() },
@@ -250,7 +246,7 @@ fun PlayerScreen(
                 Icon(
                     imageVector = if (nowPlaying.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (nowPlaying.isPlaying) "暂停" else "播放",
-                    tint = Color(0xFF04121C),
+                    tint = Color(0xFF0B1030),
                     modifier = Modifier.size(40.dp),
                 )
             }
@@ -338,13 +334,13 @@ fun PlayerScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // ===== 内嵌播放列表（玻璃卡片 + 霓虹边框） =====
+        // ===== 内嵌播放列表（圆角玻璃卡片） =====
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(24.dp))
                 .background(CardBg)
-                .border(1.dp, NeonBorder, RoundedCornerShape(18.dp))
+                .border(1.dp, NeonBorder, RoundedCornerShape(24.dp))
                 .padding(vertical = 10.dp),
         ) {
             Row(

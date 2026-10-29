@@ -4,68 +4,68 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
-// ===== Apple Music 风格品牌色：红 / 玫粉 / 橙 渐变 =====
-val MusicRed = Color(0xFFD92D47)          // 浅色模式主色（苹果红）
-val MusicRedDark = Color(0xFFFF8A94)      // 深色模式主色（柔粉红）
-val MusicContainer = Color(0xFFFFDAD9)    // 浅色主色容器
-val MusicContainerDark = Color(0xFF6E1128) // 深色主色容器
+// ===== Samsung One UI 9 风格：柔和蓝紫强调 + 极简近白/近黑背景 =====
+val MusicBlue = Color(0xFF4A6CF7)          // 浅色主色（One UI 蓝紫）
+val MusicBlueDark = Color(0xFFA7B8FF)      // 深色主色（柔和亮蓝）
+val MusicContainer = Color(0xFFDCE3FF)     // 浅色主色容器（淡蓝）
+val MusicContainerDark = Color(0xFF39457F) // 深色主色容器（深蓝）
 
-// Apple 风渐变色（红→橙→紫粉）
-val GradientRed = Color(0xFFFF5F6D)
-val GradientOrange = Color(0xFFFF8A5C)
-val GradientPurple = Color(0xFFFF4FA8)
+// One UI 风格渐变色（蓝 → 紫 → 淡紫）
+val GradientRed = Color(0xFF8B7CF7)
+val GradientOrange = Color(0xFF4A9CF7)
+val GradientPurple = Color(0xFFB39DFF)
 
-// 背景 / 表面（iOS 风）
-val BackgroundLight = Color(0xFFFFF9F8)   // 暖白
+// 背景 / 表面（三星浅色 / 深色风）
+val BackgroundLight = Color(0xFFF6F7F9)   // 柔和浅灰白
 val SurfaceLight = Color(0xFFFFFFFF)
-val BackgroundDark = Color(0xFF171113)    // 深黑棕
-val SurfaceDark = Color(0xFF201A1C)
-val SurfaceVariantDark = Color(0xFF322727)
+val BackgroundDark = Color(0xFF000000)    // 纯黑（One UI 深色）
+val SurfaceDark = Color(0xFF141519)
+val SurfaceVariantDark = Color(0xFF1E2026)
 
-// 次要色（柔玫红）
-val SecondaryLight = Color(0xFF7A4A4F)
-val SecondaryDark = Color(0xFFF2B8BE)
+// 次要色（柔和灰紫）
+val SecondaryLight = Color(0xFF5B5F7A)
+val SecondaryDark = Color(0xFFBFC7E0)
 
 // 状态色
 val SuccessGreen = Color(0xFF2E9E6B)
 val ErrorRed = Color(0xFFD64545)
 
-/** 浅色配色方案（Apple Music 浅色） */
+/** 浅色配色方案（One UI 9 浅色） */
 val CloudTuneLightColors = lightColorScheme(
-    primary = MusicRed,
+    primary = MusicBlue,
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = MusicContainer,
-    onPrimaryContainer = Color(0xFF40000A),
+    onPrimaryContainer = Color(0xFF001152),
     secondary = SecondaryLight,
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFFFDADA),
-    onSecondaryContainer = Color(0xFF331012),
+    secondaryContainer = Color(0xFFE1E0FF),
+    onSecondaryContainer = Color(0xFF1C1B3A),
     background = BackgroundLight,
-    onBackground = Color(0xFF20191A),
+    onBackground = Color(0xFF191B20),
     surface = SurfaceLight,
-    onSurface = Color(0xFF20191A),
-    surfaceVariant = Color(0xFFF2E2E1),
-    onSurfaceVariant = Color(0xFF514345),
+    onSurface = Color(0xFF191B20),
+    surfaceVariant = Color(0xFFE2E6EC),
+    onSurfaceVariant = Color(0xFF44474E),
     error = ErrorRed,
     onError = Color(0xFFFFFFFF),
 )
 
-/** 深色配色方案（Apple Music 深色） */
+/** 深色配色方案（One UI 9 深色） */
 val CloudTuneDarkColors = darkColorScheme(
-    primary = MusicRedDark,
-    onPrimary = Color(0xFF5F0000),
+    primary = MusicBlueDark,
+    onPrimary = Color(0xFF102065),
     primaryContainer = MusicContainerDark,
-    onPrimaryContainer = Color(0xFFFFDAD9),
+    onPrimaryContainer = Color(0xFFDCE3FF),
     secondary = SecondaryDark,
-    onSecondary = Color(0xFF4B2529),
-    secondaryContainer = Color(0xFF633B3F),
-    onSecondaryContainer = Color(0xFFFFDADA),
+    onSecondary = Color(0xFF363A4F),
+    secondaryContainer = Color(0xFF3D4158),
+    onSecondaryContainer = Color(0xFFDEE0FF),
     background = BackgroundDark,
-    onBackground = Color(0xFFEBE0E1),
+    onBackground = Color(0xFFE3E2E6),
     surface = SurfaceDark,
-    onSurface = Color(0xFFEBE0E1),
+    onSurface = Color(0xFFE3E2E6),
     surfaceVariant = SurfaceVariantDark,
-    onSurfaceVariant = Color(0xFFD3C1C3),
+    onSurfaceVariant = Color(0xFFC6C6CF),
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
 )
