@@ -206,7 +206,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
                 Text("CloudTune · 云盘音乐", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "版本 1.3.0",
+                    "版本 1.4.0",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

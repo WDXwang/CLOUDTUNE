@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -74,13 +75,22 @@ fun AppNavigation() {
     val container = (LocalContext.current.applicationContext as CloudTuneApp).container
     val navController = rememberNavController()
 
-    // 读取配置首值：未配置 → setup；已配置 → 主界面(browser)
+    // 读取配置首值：未配置 → setup；已配置 → 主界面（播放页）
     val startRoute by produceState<String?>(initialValue = null) {
-        value = if (container.repository.config.first() == null) Routes.SETUP else Routes.BROWSER
+        value = if (container.repository.config.first() == null) Routes.SETUP else Routes.PLAYER
     }
     if (startRoute == null) {
         LoadingBox()
         return
+    }
+
+    // 统一的底部导航切换
+    val navTo: (String) -> Unit = { route ->
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
     }
 
     // 当前路由，用于决定是否显示底部导航
@@ -96,7 +106,7 @@ fun AppNavigation() {
                 Column {
                     // 全局迷你播放条（有播放项时才显示，否则占位为空）
                     MiniPlayer(onOpenPlayer = { navController.navigate(Routes.PLAYER) })
-                    ShellBottomBar(navController, currentRoute)
+                    ShellBottomBar(currentRoute, navTo)
                 }
             }
         },
@@ -213,11 +223,10 @@ fun AppNavigation() {
             composable(Routes.EQUALIZER) {
                 EqualizerScreen(onBack = { navController.popBackStack() })
             }
-            // 正在播放（全屏，无底部导航）
+            // 正在播放（主界面：深色播放页 + 底部导航 + 右下角隐藏式队列）
             composable(Routes.PLAYER) {
                 PlayerScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenQueue = { navController.navigate(Routes.QUEUE) },
+                    onNavigate = navTo,
                     onOpenLyrics = { navController.navigate(Routes.LYRICS) },
                 )
             }
@@ -240,10 +249,14 @@ fun AppNavigation() {
     }
 }
 
-/** 底部导航栏：文件 / 收藏 / 设置 */
+/** 底部导航栏：播放 / 文件 / 本地 / 歌单 / 收藏 / 设置 */
 @Composable
-private fun ShellBottomBar(navController: NavHostController, currentRoute: String?) {
+fun ShellBottomBar(
+    currentRoute: String?,
+    onNavigate: (String) -> Unit,
+) {
     val items = listOf(
+        Triple(Routes.PLAYER, "播放", Icons.Filled.PlayArrow),
         Triple(Routes.BROWSER, "文件", Icons.Filled.Folder),
         Triple(Routes.LOCAL, "本地", Icons.Filled.LibraryMusic),
         Triple(Routes.PLAYLISTS, "歌单", Icons.Filled.QueueMusic),
@@ -259,12 +272,7 @@ private fun ShellBottomBar(navController: NavHostController, currentRoute: Strin
                 selected = currentRoute == route,
                 onClick = {
                     if (currentRoute != route) {
-                        navController.navigate(route) {
-                            // 避免重复入栈，回到起始目的地并销毁其上的页面
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                        onNavigate(route)
                     }
                 },
                 icon = { Icon(icon, contentDescription = label) },
