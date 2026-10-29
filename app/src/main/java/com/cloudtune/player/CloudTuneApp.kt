@@ -11,6 +11,7 @@ import com.cloudtune.player.data.settings.PlaybackStore
 import com.cloudtune.player.data.settings.SettingsStore
 import com.cloudtune.player.player.EqualizerController
 import com.cloudtune.player.player.PlayerControllerManager
+import com.cloudtune.player.player.VolumeBoostController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,6 +50,9 @@ class AppContainer(context: Context) {
     /** 本地数据库（收藏） */
     private val database: AppDatabase = AppDatabase.getInstance(appContext)
 
+    /** 历史记录 DAO（历史页直接使用） */
+    val historyDao = database.historyDao()
+
     /** 音乐仓库（屏蔽 WebDAV / 天翼直连差异） */
     val repository: MusicRepository = MusicRepositoryImpl(
         context = appContext,
@@ -58,8 +62,12 @@ class AppContainer(context: Context) {
         playlistDao = database.playlistDao(),
     )
 
+    /** 音量增益控制器（绑定音频会话，实现超过 100% 音量） */
+    val volumeBoost = VolumeBoostController()
+
     /** 播放器控制器管理（连接后台 MediaSession 服务） */
-    val playerManager: PlayerControllerManager = PlayerControllerManager(appContext, repository, playbackStore)
+    val playerManager: PlayerControllerManager =
+        PlayerControllerManager(appContext, repository, playbackStore, volumeBoost, database.historyDao())
 
     /** 均衡器控制器（绑定后台播放器音频会话，UI 层共享） */
     val equalizerController: EqualizerController = EqualizerController(EqualizerStore(appContext)).also {

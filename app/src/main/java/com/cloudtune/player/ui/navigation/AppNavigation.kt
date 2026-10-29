@@ -34,6 +34,7 @@ import com.cloudtune.player.ui.components.LoadingBox
 import com.cloudtune.player.ui.components.MiniPlayer
 import com.cloudtune.player.ui.equalizer.EqualizerScreen
 import com.cloudtune.player.ui.favorites.FavoritesScreen
+import com.cloudtune.player.ui.history.HistoryScreen
 import com.cloudtune.player.ui.local.LocalScreen
 import com.cloudtune.player.ui.lyrics.LyricsScreen
 import com.cloudtune.player.ui.setup.SetupViewModel
@@ -62,6 +63,7 @@ object Routes {
     const val QUEUE = "queue"
     const val EQUALIZER = "equalizer"
     const val LYRICS = "lyrics"
+    const val HISTORY = "history"
 }
 
 /** 顶部壳层：启动时读取一次已保存配置决定起始页 */
@@ -196,6 +198,7 @@ fun AppNavigation() {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onOpenEqualizer = { navController.navigate(Routes.EQUALIZER) },
+                    onOpenHistory = { navController.navigate(Routes.HISTORY) },
                     onLoggedOut = {
                         // 退出登录后回到配置页，清空整个返回栈
                         navController.navigate(Routes.SETUP) {
@@ -223,6 +226,13 @@ fun AppNavigation() {
             // 歌词（全屏）
             composable(Routes.LYRICS) {
                 LyricsScreen(onBack = { navController.popBackStack() })
+            }
+            // 历史播放（全屏）
+            composable(Routes.HISTORY) {
+                HistoryScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenPlayer = { navController.navigate(Routes.PLAYER) },
+                )
             }
         }
     }

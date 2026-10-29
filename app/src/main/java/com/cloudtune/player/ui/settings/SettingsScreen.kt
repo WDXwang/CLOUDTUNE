@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -50,6 +51,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onLoggedOut: () -> Unit,
     onOpenEqualizer: () -> Unit = {},
+    onOpenHistory: () -> Unit = {},
     vm: SettingsViewModel = viewModel(),
 ) {
     val config by vm.config.collectAsStateWithLifecycle()
@@ -93,6 +95,37 @@ fun SettingsScreen(
                     Text("均衡器", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
                         "调节各频段增益与音效预置",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text("›", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // 历史播放记录入口
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onOpenHistory,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Filled.History,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("历史播放", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "查看最近播放过的歌曲",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -170,7 +203,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(8.dp))
                 Text("CloudTune · 云盘音乐", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "版本 1.0.0",
+                    "版本 1.2.0",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

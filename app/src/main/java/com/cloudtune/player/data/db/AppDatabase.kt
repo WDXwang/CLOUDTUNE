@@ -8,8 +8,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [FavoriteEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class],
-    version = 2,
+    entities = [FavoriteEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class, HistoryEntity::class],
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -17,6 +17,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun favoriteDao(): FavoriteDao
 
     abstract fun playlistDao(): PlaylistDao
+
+    abstract fun historyDao(): HistoryDao
 
     companion object {
         @Volatile
@@ -37,6 +39,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v2 -> v3：新增历史播放记录表。 */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `history` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, " +
+                        "`artist` TEXT, `album` TEXT, `durationMs` INTEGER NOT NULL, `fileJson` TEXT NOT NULL, " +
+                        "`playedAt` INTEGER NOT NULL, `playCount` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                )
+            }
+        }
+
         /** 双检锁单例，避免重复打开数据库。 */
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
@@ -45,7 +58,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "cloudtune.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { INSTANCE = it }
             }

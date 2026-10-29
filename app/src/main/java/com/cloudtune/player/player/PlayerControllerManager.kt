@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.Json
 import kotlin.coroutines.resume
 
 /**
@@ -38,6 +39,8 @@ class PlayerControllerManager(
     context: Context,
     repository: MusicRepository,
     private val playbackStore: PlaybackStore,
+    private val boost: VolumeBoostController,
+    private val historyDao: com.cloudtune.player.data.db.HistoryDao,
 ) {
     private val appContext = context.applicationContext
 
@@ -79,7 +82,10 @@ class PlayerControllerManager(
     /** 播放器监听器：任何相关状态变化都刷新对应的 StateFlow */
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) = refreshNowPlaying()
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = refreshNowPlaying()
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            recordHistory(mediaItem)
+            refreshNowPlaying()
+        }
         override fun onPlaybackStateChanged(playbackState: Int) = refreshNowPlaying()
         override fun onRepeatModeChanged(repeatMode: Int) = refreshNowPlaying()
         override fun onShuffleModeEnabledChanged(shuffleEnabled: Boolean) = refreshNowPlaying()
@@ -99,8 +105,8 @@ class PlayerControllerManager(
                 if (controller == null) {
                     controller = c
                     c.addListener(playerListener)
-                    // 套用已保存的软件音量
-                    c.volume = defaultVolume.coerceIn(0f, 2f)
+                    // 套用已保存的软件音量：0~1 用播放器 volume，>1 用 LoudnessEnhancer
+                    applyVolumeTo(c, defaultVolume)
                     // 连上后先拉一次初始状态
                     refreshNowPlaying()
                     refreshQueue()
@@ -221,13 +227,28 @@ class PlayerControllerManager(
     }
 
     /**
+     * 把整体音量（0..2）应用到播放器：
+     * 0~1 用播放器自身 volume（安全范围），>1 时 volume=1 并用 LoudnessEnhancer 增益。
+     */
+    private fun applyVolumeTo(c: MediaController, volume: Float) {
+        val v = volume.coerceIn(0f, 2f)
+        if (v <= 1f) {
+            c.volume = v
+            boost.setGain(0)
+        } else {
+            c.volume = 1f
+            boost.setGain(((v - 1f) * 1000f).toInt())
+        }
+    }
+
+    /**
      * 设置软件音量（0.0~2.0，实时生效并持久化）。
      * 1.0 为正常音量；>1.0 为增益放大（在系统最大音量基础上再提升，过高可能破音）。
      */
     fun setVolume(volume: Float) {
         val c = controller ?: return
         val v = volume.coerceIn(0f, 2f)
-        c.volume = v
+        applyVolumeTo(c, v)
         defaultVolume = v
         _nowPlaying.value = _nowPlaying.value.copy(volume = v)
         scope.launch { playbackStore.saveVolume(v) }
@@ -247,5 +268,28 @@ class PlayerControllerManager(
         if (index !in 0 until c.mediaItemCount) return
         c.seekTo(index, 0)
         c.play()
+    }
+
+    /** 切歌时把当前曲目写入历史记录（去重、刷新时间、累加次数）。 */
+    private fun recordHistory(mediaItem: MediaItem?) {
+        val uri = mediaItem?.localConfiguration?.uri ?: return
+        scope.launch {
+            runCatching {
+                val file = CloudMedia.decode(uri) ?: return@runCatching
+                val md = mediaItem.mediaMetadata
+                val json = Json { ignoreUnknownKeys = true }
+                val dur = md.durationMs?.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L
+                historyDao.record(
+                    id = file.id,
+                    title = md.title?.toString()?.ifBlank { null }
+                        ?: com.cloudtune.player.core.util.MusicUtils.baseName(file.name),
+                    artist = md.artist?.toString()?.ifBlank { null },
+                    album = md.albumTitle?.toString()?.ifBlank { null },
+                    durationMs = dur,
+                    fileJson = json.encodeToString(CloudFile.serializer(), file),
+                    playedAt = System.currentTimeMillis(),
+                )
+            }
+        }
     }
 }

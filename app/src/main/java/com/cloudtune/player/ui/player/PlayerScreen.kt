@@ -1,6 +1,8 @@
 package com.cloudtune.player.ui.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -59,12 +63,14 @@ import com.cloudtune.player.ui.theme.GradientOrange
 import com.cloudtune.player.ui.theme.GradientPurple
 import com.cloudtune.player.ui.theme.GradientRed
 
-// 播放页强制深色（参考图风格）
-private val PlayerBg = Color(0xFF0E0E12)
-private val CardBg = Color(0xFF1B1B21)
-private val MainText = Color(0xFFF4F4F6)
-private val SubText = Color(0xFF8E8E98)
-private val Accent = Color(0xFFFA586A)
+// 播放页强制深色科技感（霓虹青 + 发光）
+private val PlayerBg = Color(0xFF070B14)
+private val CardBg = Color(0xFF101826)
+private val MainText = Color(0xFFE6F1FF)
+private val SubText = Color(0xFF7C8AA5)
+private val Accent = Color(0xFF22D3EE)
+private val Accent2 = Color(0xFF38BDF8)
+private val NeonBorder = Color(0xFF1E3A52)
 
 /**
  * 全屏播放器界面（深色、内嵌播放列表风格）。
@@ -96,10 +102,25 @@ fun PlayerScreen(
     val lyricIdx = if (lyrics.isEmpty()) -1
     else lyrics.indexOfLast { it.timeMs <= positionMs }
 
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PlayerBg),
+    ) {
+        // 顶部霓虹光晕（科技感氛围光）
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(340.dp)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(Accent.copy(alpha = 0.22f), Color.Transparent),
+                    )
+                ),
+        )
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(PlayerBg)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp),
     ) {
@@ -129,20 +150,21 @@ fun PlayerScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // ===== 横向封面卡片 =====
+        // ===== 横向封面卡片（霓虹边框 + 科技渐变） =====
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(200.dp)
                 .clip(RoundedCornerShape(20.dp))
-                .background(Brush.linearGradient(listOf(GradientPurple, GradientRed, GradientOrange))),
+                .background(Brush.linearGradient(listOf(Color(0xFF0E2439), Color(0xFF0B4A6B), Accent2.copy(alpha = 0.55f))))
+                .border(1.dp, Accent.copy(alpha = 0.55f), RoundedCornerShape(20.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Filled.MusicNote,
                 contentDescription = null,
                 modifier = Modifier.size(80.dp),
-                tint = Color.White.copy(alpha = 0.9f),
+                tint = Accent.copy(alpha = 0.95f),
             )
         }
 
@@ -216,20 +238,21 @@ fun PlayerScreen(
             IconButton(onClick = { vm.seekBack() }) {
                 Icon(Icons.Filled.Replay10, contentDescription = "快退10秒", tint = MainText, modifier = Modifier.size(34.dp))
             }
-            Surface(
-                shape = CircleShape,
-                color = MainText,
-                modifier = Modifier.size(68.dp),
-                onClick = { vm.togglePlay() },
+            Box(
+                modifier = Modifier
+                    .size(68.dp)
+                    .shadow(20.dp, CircleShape, ambientColor = Accent, spotColor = Accent)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(Accent, Accent2)))
+                    .clickable { vm.togglePlay() },
+                contentAlignment = Alignment.Center,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (nowPlaying.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (nowPlaying.isPlaying) "暂停" else "播放",
-                        tint = PlayerBg,
-                        modifier = Modifier.size(40.dp),
-                    )
-                }
+                Icon(
+                    imageVector = if (nowPlaying.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (nowPlaying.isPlaying) "暂停" else "播放",
+                    tint = Color(0xFF04121C),
+                    modifier = Modifier.size(40.dp),
+                )
             }
             IconButton(onClick = { vm.seekForward() }) {
                 Icon(Icons.Filled.Forward10, contentDescription = "快进10秒", tint = MainText, modifier = Modifier.size(34.dp))
@@ -250,6 +273,11 @@ fun PlayerScreen(
                 dragValue = null
             },
             enabled = durationMs > 0L,
+            colors = SliderDefaults.colors(
+                thumbColor = Accent,
+                activeTrackColor = Accent,
+                inactiveTrackColor = NeonBorder,
+            ),
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
@@ -293,6 +321,11 @@ fun PlayerScreen(
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 10.dp),
+                colors = SliderDefaults.colors(
+                    thumbColor = Accent,
+                    activeTrackColor = Accent,
+                    inactiveTrackColor = NeonBorder,
+                ),
             )
             Text(
                 "${(nowPlaying.volume * 100).toInt()}%",
@@ -305,12 +338,13 @@ fun PlayerScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // ===== 内嵌播放列表（卡片） =====
+        // ===== 内嵌播放列表（玻璃卡片 + 霓虹边框） =====
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
                 .background(CardBg)
+                .border(1.dp, NeonBorder, RoundedCornerShape(18.dp))
                 .padding(vertical = 10.dp),
         ) {
             Row(
@@ -336,6 +370,7 @@ fun PlayerScreen(
         }
 
         Spacer(Modifier.height(24.dp))
+    }
     }
 }
 

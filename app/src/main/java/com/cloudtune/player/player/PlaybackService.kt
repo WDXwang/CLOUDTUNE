@@ -59,6 +59,8 @@ class PlaybackService : MediaSessionService() {
 
         // 均衡器绑定到该会话
         container.equalizerController.attach(audioSessionId)
+        // 音量增益绑定到该会话
+        container.volumeBoost.attach(audioSessionId)
 
         // 绑定 MediaSession，系统媒体集成由 Media3 自动处理
         mediaSession = MediaSession.Builder(this, exoPlayer).build()
