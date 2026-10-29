@@ -1,9 +1,7 @@
-// CI 环境（如 GitHub Actions，CI=true）走官方源；本地（中国大陆）默认走阿里云镜像。
-val isCI = System.getenv("CI") != null
-
 pluginManagement {
     repositories {
-        if (isCI) {
+        // CI 环境（如 GitHub Actions，CI=true）走官方源；本地（中国大陆）默认走阿里云镜像。
+        if (System.getenv("CI") != null) {
             google()
             gradlePluginPortal()
             mavenCentral()
@@ -20,7 +18,7 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        if (isCI) {
+        if (System.getenv("CI") != null) {
             google()
             mavenCentral()
         } else {
