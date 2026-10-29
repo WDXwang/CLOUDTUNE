@@ -47,8 +47,15 @@ class PlayerControllerManager(
     @Volatile
     private var defaultSpeed = 1f
 
+    /** 上次保存的软件音量（0.0~2.0）；连接后套用。 */
+    @Volatile
+    private var defaultVolume = 1f
+
     init {
-        scope.launch { defaultSpeed = playbackStore.loadSpeed() }
+        scope.launch {
+            defaultSpeed = playbackStore.loadSpeed()
+            defaultVolume = playbackStore.loadVolume()
+        }
     }
 
     // 异步连接后台 MediaSession（只建一次）
@@ -92,6 +99,8 @@ class PlayerControllerManager(
                 if (controller == null) {
                     controller = c
                     c.addListener(playerListener)
+                    // 套用已保存的软件音量
+                    c.volume = defaultVolume.coerceIn(0f, 2f)
                     // 连上后先拉一次初始状态
                     refreshNowPlaying()
                     refreshQueue()
@@ -119,6 +128,7 @@ class PlayerControllerManager(
             repeatMode = c.repeatMode,
             shuffleEnabled = c.shuffleModeEnabled,
             playbackSpeed = c.playbackParameters.speed,
+            volume = c.volume.coerceIn(0f, 2f),
         )
     }
 
@@ -199,6 +209,19 @@ class PlayerControllerManager(
         c.setPlaybackParameters(PlaybackParameters(speed))
         defaultSpeed = speed
         scope.launch { playbackStore.saveSpeed(speed) }
+    }
+
+    /**
+     * 设置软件音量（0.0~2.0，实时生效并持久化）。
+     * 1.0 为正常音量；>1.0 为增益放大（在系统最大音量基础上再提升，过高可能破音）。
+     */
+    fun setVolume(volume: Float) {
+        val c = controller ?: return
+        val v = volume.coerceIn(0f, 2f)
+        c.volume = v
+        defaultVolume = v
+        _nowPlaying.value = _nowPlaying.value.copy(volume = v)
+        scope.launch { playbackStore.saveVolume(v) }
     }
 
     fun removeQueueItem(index: Int) {

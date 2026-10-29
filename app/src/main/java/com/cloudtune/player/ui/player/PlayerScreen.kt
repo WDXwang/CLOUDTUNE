@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -292,6 +294,35 @@ fun PlayerScreen(
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // 音量调节（0~200%，100% 为正常，>100% 为增益放大）
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.VolumeUp,
+                contentDescription = "音量",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Slider(
+                value = nowPlaying.volume.coerceIn(0f, 2f),
+                onValueChange = { vm.setVolume(it) },
+                valueRange = 0f..2f,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+            )
+            Text(
+                text = "${(nowPlaying.volume * 100).toInt()}%",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (nowPlaying.volume > 1f) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(44.dp),
+            )
         }
 
         Spacer(Modifier.weight(1f))

@@ -21,6 +21,9 @@ class EqualizerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setBandGain(band: Int, gain: Int) = controller.setBandGain(band, gain)
 
+    /** 应用内置预设（如现场氛围）。 */
+    fun applyPreset(db: List<Int>) = controller.applyPreset(db)
+
     /** 一键归零（各频段 0，并启用）。 */
     fun reset() {
         val s = controller.state.value

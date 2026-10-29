@@ -16,6 +16,8 @@ data class NowPlayingUi(
     val shuffleEnabled: Boolean = false,
     /** 当前播放倍速（1.0 为正常） */
     val playbackSpeed: Float = 1f,
+    /** 软件音量（0.0~2.0，1.0 为正常，>1.0 为增益） */
+    val volume: Float = 1f,
 )
 
 /**

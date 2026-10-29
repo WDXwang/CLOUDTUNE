@@ -101,6 +101,28 @@ class EqualizerController(private val store: EqualizerStore) {
         scope.launch { store.saveGains(newGains) }
     }
 
+    /**
+     * 应用预设（参数为各频段 dB，按 低 / 中低 / 中 / 中高 / 高 五段），并启用均衡器。
+     * 频段数与预设长度不符时，缺失段按 0 处理。
+     */
+    fun applyPreset(db: List<Int>) {
+        val s = _state.value
+        s.gains.indices.forEach { band ->
+            setBandGain(band, db.getOrElse(band) { 0 } * 100)
+        }
+        setEnabled(true)
+    }
+
+    /** 内置预设（单位 dB，对应 5 段：60 / 230 / 910 / 3600 / 14000 Hz）。 */
+    object Presets {
+        /** 现场氛围：增强低频力度与高频空气感，中低频略收，营造空间与临场感。 */
+        val LIVE = listOf(4, -1, 1, 3, 4)
+        val POP = listOf(2, -1, 0, 2, 2)
+        val ROCK = listOf(4, -1, -1, 2, 3)
+        val VOCAL = listOf(-1, 1, 3, 2, 1)
+        val FLAT = listOf(0, 0, 0, 0, 0)
+    }
+
     // ---------- 内部 ----------
 
     // 进程内缓存已保存值，attach 时同步读取

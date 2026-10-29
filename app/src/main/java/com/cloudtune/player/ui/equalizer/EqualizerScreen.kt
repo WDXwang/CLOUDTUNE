@@ -2,6 +2,7 @@ package com.cloudtune.player.ui.equalizer
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,11 +33,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.cloudtune.player.player.EqualizerController
 
 /**
  * 均衡器页：开关、预置选择、各频段增益滑杆。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EqualizerScreen(
     onBack: () -> Unit,
@@ -74,6 +76,42 @@ fun EqualizerScreen(
             ) {
                 Text("启用均衡器", style = MaterialTheme.typography.titleMedium)
                 Switch(checked = state.enabled, onCheckedChange = { vm.setEnabled(it) })
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // 音效预设
+            Text("音效预设", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                androidx.compose.material3.FilterChip(
+                    selected = false,
+                    onClick = { vm.applyPreset(EqualizerController.Presets.LIVE) },
+                    label = { Text("现场氛围") },
+                )
+                androidx.compose.material3.FilterChip(
+                    selected = false,
+                    onClick = { vm.applyPreset(EqualizerController.Presets.POP) },
+                    label = { Text("流行") },
+                )
+                androidx.compose.material3.FilterChip(
+                    selected = false,
+                    onClick = { vm.applyPreset(EqualizerController.Presets.ROCK) },
+                    label = { Text("摇滚") },
+                )
+                androidx.compose.material3.FilterChip(
+                    selected = false,
+                    onClick = { vm.applyPreset(EqualizerController.Presets.VOCAL) },
+                    label = { Text("人声") },
+                )
+                androidx.compose.material3.FilterChip(
+                    selected = false,
+                    onClick = { vm.applyPreset(EqualizerController.Presets.FLAT) },
+                    label = { Text("平坦") },
+                )
             }
 
             Spacer(Modifier.height(24.dp))

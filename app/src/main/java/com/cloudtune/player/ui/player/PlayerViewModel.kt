@@ -54,4 +54,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 设置播放倍速 */
     fun setPlaybackSpeed(speed: Float) = playerManager.setPlaybackSpeed(speed)
+
+    /** 设置软件音量（0.0~2.0，>1.0 为增益） */
+    fun setVolume(volume: Float) = playerManager.setVolume(volume)
 }
