@@ -10,15 +10,19 @@ import androidx.lifecycle.viewModelScope
 import com.cloudtune.player.CloudTuneApp
 import com.cloudtune.player.core.model.BackendType
 import com.cloudtune.player.core.model.ServerConfig
+import com.cloudtune.player.core.model.StorageAccount
+import com.cloudtune.player.core.model.displayName
 import com.cloudtune.player.data.MusicRepository
+import com.cloudtune.player.data.pan123.Pan123Auth
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /**
- * 首次配置 / 服务器设置页 ViewModel。
+ * 「添加网盘」页 ViewModel：收集表单、测试连接、登录（123 云盘）、保存为新存储。
  *
- * 负责：收集表单字段、测试连接、保存配置。
- * 表单状态直接用 mutableStateOf 暴露，便于 Compose 直接绑定。
  * 手机 Web 登录页会把抓到的 Cookie 写入本页的 SavedStateHandle，此处自动回填到表单。
  */
 class SetupViewModel(
@@ -42,7 +46,10 @@ class SetupViewModel(
         }
     }
 
-    /** 当前选择的后端：WebDAV（推荐）/ 天翼直连（实验） */
+    /** 显示名称（聚合首页卡片标题），留空时使用后端名称 */
+    var accountName by mutableStateOf("")
+
+    /** 当前选择的后端 */
     var backend by mutableStateOf(BackendType.WEBDAV)
         private set
 
@@ -60,6 +67,20 @@ class SetupViewModel(
     var tianyiSessionSecret by mutableStateOf("")
     var tianyiAccessToken by mutableStateOf("")
     var tianyiRefreshToken by mutableStateOf("")
+
+    // ---- 123 云盘表单字段 ----
+    var pan123Passport by mutableStateOf("")
+    var pan123Password by mutableStateOf("")
+    var pan123Token by mutableStateOf("")
+    var pan123RootFolderId by mutableStateOf("0")
+    var pan123LoggingIn by mutableStateOf(false)
+        private set
+    var pan123LoginMessage by mutableStateOf<String?>(null)
+        private set
+
+    // ---- 夸克网盘表单字段 ----
+    var quarkCookie by mutableStateOf("")
+    var quarkRootFid by mutableStateOf("0")
 
     /** 当前是否处于「token 会话」登录态（扫码登录，不绑定 IP） */
     val hasTokenSession: Boolean
@@ -120,6 +141,36 @@ class SetupViewModel(
         testMessage = null
     }
 
+    /** 123 云盘账号密码登录，换到 Bearer token 后回填表单。 */
+    fun loginPan123() {
+        if (pan123LoggingIn) return
+        if (pan123Passport.isBlank() || pan123Password.isBlank()) {
+            pan123LoginMessage = "请先填写账号与密码"
+            return
+        }
+        viewModelScope.launch {
+            pan123LoggingIn = true
+            pan123LoginMessage = null
+            runCatching {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .build()
+                try {
+                    Pan123Auth.login(pan123Passport.trim(), pan123Password, client)
+                } finally {
+                    runCatching { client.dispatcher.executorService.shutdown() }
+                }
+            }.onSuccess { token ->
+                pan123Token = token
+                pan123LoginMessage = "登录成功，可以测试连接"
+            }.onFailure { e ->
+                pan123LoginMessage = "登录失败：${e.message ?: "未知错误"}"
+            }
+            pan123LoggingIn = false
+        }
+    }
+
     /** 根据当前表单构造配置对象 */
     private fun buildConfig(): ServerConfig = when (backend) {
         BackendType.WEBDAV -> ServerConfig(
@@ -140,9 +191,22 @@ class SetupViewModel(
             tianyiAccessToken = tianyiAccessToken,
             tianyiRefreshToken = tianyiRefreshToken,
         )
+
+        BackendType.PAN123 -> ServerConfig(
+            backend = BackendType.PAN123,
+            pan123Passport = pan123Passport.trim(),
+            pan123Token = pan123Token,
+            pan123RootFolderId = pan123RootFolderId.trim().ifBlank { "0" },
+        )
+
+        BackendType.QUARK -> ServerConfig(
+            backend = BackendType.QUARK,
+            quarkCookie = quarkCookie.trim(),
+            quarkRootFid = quarkRootFid.trim().ifBlank { "0" },
+        )
     }
 
-    /** 用当前表单做连通性测试（不影响已保存配置） */
+    /** 用当前表单做连通性测试（不影响已保存的配置） */
     fun testConnection() {
         if (testing) return
         viewModelScope.launch {
@@ -166,14 +230,24 @@ class SetupViewModel(
         }
     }
 
-    /** 保存配置；成功后置 [saved]，界面跳转 */
+    /** 保存为新存储；成功后置 [saved]，界面跳转 */
     fun save() {
         if (saving) return
         viewModelScope.launch {
             saving = true
             saveError = null
-            runCatching { repository.saveConfig(buildConfig()) }
-                .onSuccess { saved = true }
+            val name = accountName.trim().ifBlank { backend.displayName }
+            val account = StorageAccount(
+                id = UUID.randomUUID().toString(),
+                name = name,
+                config = buildConfig(),
+                enabled = true,
+                createdAt = System.currentTimeMillis(),
+            )
+            runCatching { repository.addAccount(account) }
+                .onSuccess {
+                    saved = true
+                }
                 .onFailure { e -> saveError = "保存失败：${e.message ?: "未知错误"}" }
             saving = false
         }

@@ -8,16 +8,25 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.cloudtune.player.CloudTuneApp
 import com.cloudtune.player.core.model.CloudFile
+import com.cloudtune.player.core.model.StorageAccount
 import com.cloudtune.player.data.MusicRepository
 import com.cloudtune.player.player.PlayerControllerManager
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
- * 云盘文件浏览页 ViewModel。
+ * 云盘文件浏览页 ViewModel（多网盘聚合）。
  *
- * 维护一个目录栈（根目录用 null 表示），支持逐级进入 / 返回 / 刷新；
- * 支持按文件名搜索（本地过滤）、多选（长按进入）与全选；
- * 点击音乐文件时用“当前目录全部音乐”作为队列调用播放器播放。
+ * 两种层级：
+ * - **聚合首页**（[BrowserUiState.atHome] = true）：展示全部已启用的存储卡片；
+ * - **存储内浏览**：进入某个存储后维护目录栈，支持逐级进入 / 返回 / 刷新 / 本地过滤；
+ *
+ * 聚合首页的搜索框执行「跨盘搜索」：并行在各启用存储内做有上限的递归搜索。
+ * 点击音乐时用当前可见音乐作为队列播放，播放器按文件自带的 accountId 路由到对应网盘。
  */
 class BrowserViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -25,35 +34,105 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
     private val repository: MusicRepository = container.repository
     private val player: PlayerControllerManager = container.playerManager
 
-    /** 目录栈：栈底为根目录(null)，之后每进入一层压入一个文件夹 */
-    private val dirStack = ArrayDeque<CloudFile?>().apply { addLast(null) }
+    /** 当前展示的存储列表（来自持久化账号） */
+    private var allAccounts: List<StorageAccount> = emptyList()
+
+    /** 存储内浏览的目录栈；null 表示该存储的根目录 */
+    private val dirStack = ArrayDeque<CloudFile?>()
+
+    /** 当前所在存储；null 表示聚合首页 */
+    private var currentAccountId: String? = null
+
+    private var searchJob: Job? = null
 
     var uiState by mutableStateOf(BrowserUiState())
         private set
 
     init {
+        // 账号列表变化（新增 / 删除 / 启停）实时刷新首页
+        viewModelScope.launch {
+            repository.accounts.collectLatest { list ->
+                allAccounts = list
+                uiState = uiState.copy(accounts = list.filter { it.enabled })
+                if (currentAccountId == null) {
+                    // 首页：只看启用项，不做文件加载
+                    uiState = uiState.copy(loading = false)
+                } else if (list.none { it.id == currentAccountId }) {
+                    // 当前存储被删除 → 回到首页
+                    backToHome()
+                }
+            }
+        }
+        uiState = uiState.copy(loading = false)
+    }
+
+    /** 当前目录（null = 所进入存储的根目录） */
+    private val currentDir: CloudFile? get() = dirStack.lastOrNull()
+
+    private fun currentAccount(): StorageAccount? =
+        allAccounts.firstOrNull { it.id == currentAccountId }
+
+    // ---------- 存储间导航 ----------
+
+    /** 从聚合首页进入某条存储 */
+    fun openAccount(account: StorageAccount) {
+        if (!account.enabled) return
+        currentAccountId = account.id
+        dirStack.clear()
+        dirStack.addLast(null)
+        uiState = uiState.copy(
+            atHome = false,
+            query = "",
+            selectionMode = false,
+            selectedIds = emptySet(),
+            error = null,
+        )
         refresh()
     }
 
-    /** 当前目录（null = 根目录） */
-    private val currentDir: CloudFile? get() = dirStack.last()
-
-    /** 加载指定目录内容 */
-    private suspend fun load(dir: CloudFile?) {
+    /** 返回聚合首页 */
+    private fun backToHome() {
+        currentAccountId = null
+        dirStack.clear()
         uiState = uiState.copy(
-            loading = true, error = null, currentDir = dir,
+            atHome = true,
+            files = emptyList(),
+            query = "",
+            currentDir = null,
+            accountId = null,
+            accountName = null,
+            canGoBack = false,
+            selectionMode = false,
+            selectedIds = emptySet(),
+            error = null,
+            loading = false,
+        )
+    }
+
+    /** 刷新当前层级 */
+    fun refresh() {
+        val accountId = currentAccountId ?: return
+        viewModelScope.launch { load(accountId, currentDir) }
+    }
+
+    private suspend fun load(accountId: String, dir: CloudFile?) {
+        val account = allAccounts.firstOrNull { it.id == accountId }
+        uiState = uiState.copy(
+            loading = true, error = null, atHome = false,
+            accountId = accountId, accountName = account?.name,
+            currentDir = dir,
             query = "", selectionMode = false, selectedIds = emptySet(),
         )
-        runCatching { repository.list(dir) }
+        runCatching { repository.list(accountId, dir) }
             .onSuccess { files ->
-                // 文件夹在前，音乐文件在后，各自按名称排序
+                // 文件夹在前，文件在后，各自按名称排序
                 val sorted = files.sortedWith(
                     compareByDescending<CloudFile> { it.isDir }.thenBy { it.name }
                 )
                 uiState = uiState.copy(
                     loading = false,
                     files = sorted,
-                    canGoBack = dirStack.size > 1,
+                    canGoBack = true,
                 )
             }
             .onFailure { e ->
@@ -64,11 +143,6 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
             }
     }
 
-    /** 刷新当前目录 */
-    fun refresh() {
-        viewModelScope.launch { load(currentDir) }
-    }
-
     /** 进入文件夹 */
     fun enterFolder(dir: CloudFile) {
         if (!dir.isDir) return
@@ -76,17 +150,54 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
         refresh()
     }
 
-    /** 返回上一级；根目录时不可返回 */
+    /** 返回上一级；存储根目录时返回聚合首页 */
     fun goBack() {
-        if (dirStack.size <= 1) return
+        if (currentAccountId == null) return
+        if (dirStack.size <= 1) {
+            backToHome()
+            return
+        }
         dirStack.removeLast()
         refresh()
     }
 
     // ---------- 搜索 ----------
 
+    /**
+     * 首页：跨网盘搜索（防抖 400ms，并行查询各启用存储，深度 / 条数有上限）。
+     * 存储内：维持本地过滤语义，不触发网络请求。
+     */
     fun setQuery(q: String) {
-        uiState = uiState.copy(query = q)
+        uiState = uiState.copy(query = q, error = null)
+        if (uiState.atHome) startCrossSearch(q)
+    }
+
+    private fun startCrossSearch(query: String) {
+        searchJob?.cancel()
+        val q = query.trim()
+        if (q.isBlank()) {
+            uiState = uiState.copy(files = emptyList(), loading = false)
+            return
+        }
+        searchJob = viewModelScope.launch {
+            delay(400)
+            uiState = uiState.copy(loading = true)
+            val targets = allAccounts.filter { it.enabled }
+            // 并行搜索各存储；单个存储失败不影响其它存储
+            val results = kotlinx.coroutines.coroutineScope {
+                targets.map { account ->
+                    async {
+                        runCatching { repository.search(account.id, q) }.getOrDefault(emptyList())
+                    }
+                }.awaitAll().flatten().toMutableList()
+            }
+            uiState = uiState.copy(
+                loading = false,
+                files = results.sortedWith(
+                    compareByDescending<CloudFile> { it.isDir }.thenBy { it.accountName }.thenBy { it.name }
+                ),
+            )
+        }
     }
 
     // ---------- 多选 ----------
@@ -96,7 +207,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
         uiState = uiState.copy(selectionMode = true, selectedIds = setOf(file.id))
     }
 
-    /** 切换某一项的选中状态（仅音乐文件） */
+    /** 切换某一项的选中状态（仅文件） */
     fun toggleSelect(file: CloudFile) {
         if (file.isDir) return
         val s = uiState.selectedIds.toMutableSet()
@@ -155,7 +266,15 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
 data class BrowserUiState(
     val loading: Boolean = false,
     val error: String? = null,
-    val currentDir: CloudFile? = null,   // null = 根目录
+    /** 是否处于多网盘聚合首页 */
+    val atHome: Boolean = true,
+    /** 首页展示的已启用存储 */
+    val accounts: List<StorageAccount> = emptyList(),
+    /** 当前所在存储 */
+    val accountId: String? = null,
+    val accountName: String? = null,
+    /** 当前目录，null 表示存储根目录 */
+    val currentDir: CloudFile? = null,
     val files: List<CloudFile> = emptyList(),
     val canGoBack: Boolean = false,
     val query: String = "",
@@ -164,12 +283,19 @@ data class BrowserUiState(
 ) {
     /** 顶部显示的路径名 */
     val pathLabel: String
-        get() = currentDir?.name ?: "/"
+        get() = when {
+            atHome -> "我的网盘"
+            currentDir != null -> currentDir.name
+            else -> accountName ?: "/"
+        }
 
-    /** 按搜索词过滤后的可见条目（文件夹与音乐，按名称匹配） */
+    /** 按搜索词过滤后的可见条目（首页搜索结果为网络返回，不再二次过滤） */
     val visibleFiles: List<CloudFile>
-        get() = if (query.isBlank()) files
-        else files.filter { it.name.contains(query.trim(), ignoreCase = true) }
+        get() = when {
+            atHome -> files
+            query.isBlank() -> files
+            else -> files.filter { it.name.contains(query.trim(), ignoreCase = true) }
+        }
 
     /** 可播放音乐数量（全部，未过滤） */
     val musicCount: Int get() = files.count { it.isMusic() }
@@ -180,4 +306,8 @@ data class BrowserUiState(
     /** 全选框状态：true=全选，false=部分或未选 */
     val allSelected: Boolean
         get() = visibleMusicCount > 0 && selectedIds.size == visibleMusicCount
+
+    /** 首页且未输入搜索词时，展示存储卡片列表而非文件列表 */
+    val showAccountCards: Boolean
+        get() = atHome && query.isBlank()
 }

@@ -47,6 +47,7 @@ import com.cloudtune.player.ui.playlists.PlaylistsScreen
 import com.cloudtune.player.ui.queue.QueueScreen
 import com.cloudtune.player.ui.settings.SettingsScreen
 import com.cloudtune.player.ui.setup.SetupScreen
+import com.cloudtune.player.ui.storages.StoragesScreen
 import com.cloudtune.player.ui.setup.TianyiQrLoginScreen
 import com.cloudtune.player.ui.setup.TianyiWebLoginScreen
 import kotlinx.coroutines.flow.first
@@ -57,6 +58,7 @@ object Routes {
     const val TIANYI_WEB_LOGIN = "tianyi_web_login"
     const val TIANYI_QR_LOGIN = "tianyi_qr_login"
     const val BROWSER = "browser"
+    const val STORAGES = "storages"
     const val LOCAL = "local"
     const val PLAYLISTS = "playlists"
     const val PLAYLIST_DETAIL = "playlist/{playlistId}?name={name}"
@@ -75,9 +77,9 @@ fun AppNavigation() {
     val container = (LocalContext.current.applicationContext as CloudTuneApp).container
     val navController = rememberNavController()
 
-    // 读取配置首值：未配置 → setup；已配置 → 主界面（播放页）
+    // 读取存储列表首值：未添加任何网盘 → setup；否则 → 主界面（播放页）
     val startRoute by produceState<String?>(initialValue = null) {
-        value = if (container.repository.config.first() == null) Routes.SETUP else Routes.PLAYER
+        value = if (container.repository.accounts.first().isEmpty()) Routes.SETUP else Routes.PLAYER
     }
     if (startRoute == null) {
         LoadingBox()
@@ -118,12 +120,16 @@ fun AppNavigation() {
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            // 首次配置：完成后进入主界面并清掉 setup 返回栈
+            // 添加网盘：首次配置进入主界面；从网盘管理页进入则直接返回
             composable(Routes.SETUP) {
                 SetupScreen(
                     onConfigured = {
-                        navController.navigate(Routes.BROWSER) {
-                            popUpTo(Routes.SETUP) { inclusive = true }
+                        if (navController.previousBackStackEntry != null) {
+                            navController.popBackStack()
+                        } else {
+                            navController.navigate(Routes.BROWSER) {
+                                popUpTo(Routes.SETUP) { inclusive = true }
+                            }
                         }
                     },
                     onOpenTianyiWebLogin = {
@@ -170,9 +176,19 @@ fun AppNavigation() {
                     },
                 )
             }
-            // 文件
+            // 文件（多网盘聚合首页）
             composable(Routes.BROWSER) {
-                BrowserScreen(onOpenPlayer = { navController.navigate(Routes.PLAYER) })
+                BrowserScreen(
+                    onOpenPlayer = { navController.navigate(Routes.PLAYER) },
+                    onOpenStorages = { navController.navigate(Routes.STORAGES) },
+                )
+            }
+            // 网盘管理（全屏）
+            composable(Routes.STORAGES) {
+                StoragesScreen(
+                    onBack = { navController.popBackStack() },
+                    onAdd = { navController.navigate(Routes.SETUP) },
+                )
             }
             // 本地音乐
             composable(Routes.LOCAL) {
@@ -209,6 +225,7 @@ fun AppNavigation() {
             composable(Routes.SETTINGS) {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
+                    onOpenStorages = { navController.navigate(Routes.STORAGES) },
                     onOpenEqualizer = { navController.navigate(Routes.EQUALIZER) },
                     onOpenHistory = { navController.navigate(Routes.HISTORY) },
                     onLoggedOut = {

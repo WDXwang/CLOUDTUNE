@@ -13,10 +13,15 @@ import android.util.Rational
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,8 +34,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PictureInPictureAlt
@@ -49,6 +57,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,8 +65,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
@@ -102,6 +114,16 @@ class VideoActivity : ComponentActivity() {
     var inPip by mutableStateOf(false)
         private set
 
+    /** true = 横屏全屏（沉浸式）；false = 竖屏（系统栏可见、播放栏常驻）。 */
+    private var isFullscreen by mutableStateOf(false)
+
+    /** 全屏下返回键先退出全屏，而不是直接关闭 Activity。 */
+    private val fullscreenBackCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            setFullscreen(false)
+        }
+    }
+
     private val dlna by lazy { (application as CloudTuneApp).container.dlnaController }
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -123,6 +145,9 @@ class VideoActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onBackPressedDispatcher.addCallback(this, fullscreenBackCallback)
+        // 默认竖屏模式：系统状态栏/导航栏可见，播放栏常驻。
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
         val b64 = intent.getStringExtra(EXTRA_FILE_B64)
         targetFile = b64?.let {
@@ -155,7 +180,8 @@ class VideoActivity : ComponentActivity() {
                                 onPickSubtitle = { pickSubtitleLauncher.launch(arrayOf("*/*")) },
                                 onEnterPip = { enterPip() },
                                 onClose = { finish() },
-                                modifier = Modifier.align(Alignment.BottomCenter),
+                                isFullscreen = isFullscreen,
+                                onToggleFullscreen = { setFullscreen(!isFullscreen) },
                             )
                         }
                     } else {
@@ -253,6 +279,48 @@ class VideoActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 切换 竖屏模式 ↔ 横屏全屏模式。
+     * 全屏：锁横屏 + 隐藏系统栏（沉浸式）；竖屏：锁竖屏 + 恢复系统栏。
+     */
+    private fun setFullscreen(fullscreen: Boolean) {
+        if (isFullscreen == fullscreen) return
+        isFullscreen = fullscreen
+        fullscreenBackCallback.isEnabled = fullscreen
+        requestedOrientation = if (fullscreen) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+        applySystemBars(fullscreen)
+    }
+
+    /** 按模式显示/隐藏系统栏；不重建 Activity（Manifest 已声明 configChanges）。 */
+    private fun applySystemBars(fullscreen: Boolean) {
+        runCatching {
+            val controller = WindowInsetsControllerCompat(window, window.decorView)
+            if (fullscreen) {
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 旋转后部分机型会把系统栏重新显示出来，转屏后再校正一次。
+        window.decorView.post { applySystemBars(isFullscreen) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!inPip) applySystemBars(isFullscreen)
+    }
+
     private fun enterPip() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val exo = player ?: return
@@ -275,6 +343,8 @@ class VideoActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPip = isInPictureInPictureMode
+        // 画中画里不显示任何覆盖控件；退出画中画后按当前模式恢复系统栏。
+        if (!isInPictureInPictureMode) applySystemBars(isFullscreen)
     }
 
     override fun onStop() {
@@ -315,7 +385,8 @@ class VideoActivity : ComponentActivity() {
         onPickSubtitle: () -> Unit,
         onEnterPip: () -> Unit,
         onClose: () -> Unit,
-        modifier: Modifier = Modifier,
+        isFullscreen: Boolean,
+        onToggleFullscreen: () -> Unit,
     ) {
         var positionMs by remember { mutableLongStateOf(0L) }
         var durationMs by remember { mutableLongStateOf(0L) }
@@ -326,6 +397,16 @@ class VideoActivity : ComponentActivity() {
         var dragging by remember { mutableStateOf(false) }
         var dragFraction by remember { mutableFloatStateOf(0f) }
         var castPanel by remember { mutableStateOf(false) }
+
+        // 播放栏可见性 + 自动隐藏计时令牌：每次交互自增以重置 5 秒计时
+        var controlsVisible by remember { mutableStateOf(true) }
+        var autoHideToken by remember { mutableIntStateOf(0) }
+
+        /** 记录一次用户操作：保持播放栏可见并重置自动隐藏计时。 */
+        fun markInteraction() {
+            autoHideToken++
+            controlsVisible = true
+        }
 
         val devices by dlna.devices.collectAsStateWithLifecycle()
         val discovering by dlna.discovering.collectAsStateWithLifecycle()
@@ -346,127 +427,234 @@ class VideoActivity : ComponentActivity() {
             }
         }
 
+        // 全屏：5 秒无操作自动隐藏播放栏；竖屏：播放栏常驻
+        LaunchedEffect(autoHideToken, isFullscreen) {
+            if (!isFullscreen) {
+                controlsVisible = true
+                return@LaunchedEffect
+            }
+            delay(5000)
+            if (!dragging && !speedMenu && !subMenu && !castPanel) controlsVisible = false
+        }
+
         val progress = if (dragging) dragFraction
         else if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
         else 0f
 
-        Column(
-            modifier = modifier
-                .fillMaxWidth()
-                .background(Color(0x99000000))
-                .padding(16.dp)
-        ) {
-            error?.let {
-                Text(it, color = Color(0xFFFF6B6B), modifier = Modifier.padding(bottom = 8.dp))
-            }
-            // 进度条 + 时间
-            NovaProgress(
-                progress = progress,
-                onSeek = { dragFraction = it; dragging = true },
-                onSeekFinished = { f ->
-                    if (durationMs > 0) exo.seekTo((f * durationMs).toLong())
-                    dragging = false
-                },
-                enabled = durationMs > 0L,
-            )
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    MusicUtils.formatDuration(if (dragging) (dragFraction * durationMs).toLong() else positionMs),
-                    color = Color.White
-                )
-                Text(MusicUtils.formatDuration(durationMs), color = Color.White)
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // 控制行
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = { exo.seekTo(exo.currentPosition - 10000) }) {
-                    Icon(Icons.Filled.Replay10, contentDescription = "后退10秒", tint = Color.White)
-                }
-                IconButton(onClick = {
-                    if (exo.isPlaying) exo.pause() else exo.play()
-                }) {
-                    Icon(
-                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = "播放/暂停",
-                        tint = Color.White,
-                        modifier = Modifier.size(40.dp)
-                    )
-                }
-                IconButton(onClick = { exo.seekTo(exo.currentPosition + 10000) }) {
-                    Icon(Icons.Filled.Forward10, contentDescription = "快进10秒", tint = Color.White)
-                }
-
-                // 倍速
-                Box {
-                    IconButton(onClick = { speedMenu = true }) {
-                        Icon(Icons.Filled.Speed, contentDescription = "倍速", tint = Color.White)
-                    }
-                    DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
-                        speeds.forEach { s ->
-                            DropdownMenuItem(
-                                text = { Text(if (s == 1f) "正常 1.0x" else "${s}x") },
-                                onClick = {
-                                    speed = s
-                                    exo.playbackParameters = PlaybackParameters(s)
-                                    speedMenu = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                // 字幕
-                Box {
-                    IconButton(onClick = { subMenu = true }) {
-                        Icon(Icons.Filled.ClosedCaption, contentDescription = "字幕", tint = Color.White)
-                    }
-                    DropdownMenu(expanded = subMenu, onDismissRequest = { subMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("关闭字幕") },
-                            onClick = {
-                                applySubtitleSelection(off = true, groupIndex = -1)
-                                subMenu = false
+        Box(Modifier.fillMaxSize()) {
+            // 画面点击层：位于播放栏之下，点画面中央切换播放栏显隐（不会挡住控件）
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures {
+                            if (isFullscreen) {
+                                controlsVisible = !controlsVisible
+                                if (controlsVisible) autoHideToken++
                             }
-                        )
-                        // 内嵌/外挂文本轨
-                        val textGroups = remember(exo.currentTracks) { collectTextGroupCount(exo) }
-                        for (i in 0 until textGroups) {
-                            DropdownMenuItem(
-                                text = { Text("字幕轨道 ${i + 1}") },
-                                onClick = {
-                                    applySubtitleSelection(off = false, groupIndex = i)
-                                    subMenu = false
-                                }
-                            )
                         }
-                        DropdownMenuItem(
-                            text = { Text("选择外挂字幕文件…") },
-                            onClick = { subMenu = false; onPickSubtitle() }
+                    }
+            ) {
+                // 仅作为画面点击区域，不含内容
+            }
+
+            // 顶部返回：全屏时退出全屏，竖屏时关闭页面（随播放栏一起显隐）
+            AnimatedVisibility(
+                visible = controlsVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopStart),
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x66000000))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = {
+                        markInteraction()
+                        if (isFullscreen) onToggleFullscreen() else onClose()
+                    }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回",
+                            tint = Color.White
                         )
                     }
                 }
+            }
 
-                // 投屏
-                IconButton(onClick = { castPanel = true }) {
-                    Icon(
-                        Icons.Filled.Tv,
-                        contentDescription = "投屏",
-                        tint = if (casting != null) Color(0xFF5B93FF) else Color.White
+            // 底部播放栏
+            AnimatedVisibility(
+                visible = controlsVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x99000000))
+                        .pointerInput(Unit) { detectTapGestures { markInteraction() } }
+                        .padding(16.dp)
+                ) {
+                    error?.let {
+                        Text(it, color = Color(0xFFFF6B6B), modifier = Modifier.padding(bottom = 8.dp))
+                    }
+                    // 进度条 + 时间 + 全屏切换
+                    NovaProgress(
+                        progress = progress,
+                        onSeek = { dragFraction = it; dragging = true },
+                        onSeekFinished = { f ->
+                            if (durationMs > 0) exo.seekTo((f * durationMs).toLong())
+                            dragging = false
+                            markInteraction()
+                        },
+                        enabled = durationMs > 0L,
                     )
-                }
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            MusicUtils.formatDuration(if (dragging) (dragFraction * durationMs).toLong() else positionMs),
+                            color = Color.White
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(MusicUtils.formatDuration(durationMs), color = Color.White)
+                            // 竖屏 / 横屏全屏切换
+                            IconButton(onClick = {
+                                markInteraction()
+                                onToggleFullscreen()
+                            }) {
+                                Icon(
+                                    if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                                    contentDescription = if (isFullscreen) "退出全屏" else "全屏播放",
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                    }
 
-                // PiP
-                IconButton(onClick = onEnterPip) {
-                    Icon(Icons.Filled.PictureInPictureAlt, contentDescription = "画中画", tint = Color.White)
+                    Spacer(Modifier.height(8.dp))
+
+                    // 控制行
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = {
+                            markInteraction()
+                            exo.seekTo(exo.currentPosition - 10000)
+                        }) {
+                            Icon(Icons.Filled.Replay10, contentDescription = "后退10秒", tint = Color.White)
+                        }
+                        IconButton(onClick = {
+                            markInteraction()
+                            if (exo.isPlaying) exo.pause() else exo.play()
+                        }) {
+                            Icon(
+                                if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = "播放/暂停",
+                                tint = Color.White,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+                        IconButton(onClick = {
+                            markInteraction()
+                            exo.seekTo(exo.currentPosition + 10000)
+                        }) {
+                            Icon(Icons.Filled.Forward10, contentDescription = "快进10秒", tint = Color.White)
+                        }
+
+                        // 倍速
+                        Box {
+                            IconButton(onClick = {
+                                markInteraction()
+                                speedMenu = true
+                            }) {
+                                Icon(Icons.Filled.Speed, contentDescription = "倍速", tint = Color.White)
+                            }
+                            DropdownMenu(
+                                expanded = speedMenu,
+                                onDismissRequest = { speedMenu = false; markInteraction() }
+                            ) {
+                                speeds.forEach { s ->
+                                    DropdownMenuItem(
+                                        text = { Text(if (s == 1f) "正常 1.0x" else "${s}x") },
+                                        onClick = {
+                                            speed = s
+                                            exo.playbackParameters = PlaybackParameters(s)
+                                            speedMenu = false
+                                            markInteraction()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // 字幕
+                        Box {
+                            IconButton(onClick = {
+                                markInteraction()
+                                subMenu = true
+                            }) {
+                                Icon(Icons.Filled.ClosedCaption, contentDescription = "字幕", tint = Color.White)
+                            }
+                            DropdownMenu(
+                                expanded = subMenu,
+                                onDismissRequest = { subMenu = false; markInteraction() }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("关闭字幕") },
+                                    onClick = {
+                                        applySubtitleSelection(off = true, groupIndex = -1)
+                                        subMenu = false
+                                        markInteraction()
+                                    }
+                                )
+                                // 内嵌/外挂文本轨
+                                val textGroups = remember(exo.currentTracks) { collectTextGroupCount(exo) }
+                                for (i in 0 until textGroups) {
+                                    DropdownMenuItem(
+                                        text = { Text("字幕轨道 ${i + 1}") },
+                                        onClick = {
+                                            applySubtitleSelection(off = false, groupIndex = i)
+                                            subMenu = false
+                                            markInteraction()
+                                        }
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("选择外挂字幕文件…") },
+                                    onClick = { subMenu = false; markInteraction(); onPickSubtitle() }
+                                )
+                            }
+                        }
+
+                        // 投屏
+                        IconButton(onClick = {
+                            markInteraction()
+                            castPanel = true
+                        }) {
+                            Icon(
+                                Icons.Filled.Tv,
+                                contentDescription = "投屏",
+                                tint = if (casting != null) Color(0xFF5B93FF) else Color.White
+                            )
+                        }
+
+                        // PiP
+                        IconButton(onClick = {
+                            markInteraction()
+                            onEnterPip()
+                        }) {
+                            Icon(Icons.Filled.PictureInPictureAlt, contentDescription = "画中画", tint = Color.White)
+                        }
+                    }
                 }
             }
         }
@@ -474,7 +662,7 @@ class VideoActivity : ComponentActivity() {
         // 投屏设备选择对话框
         if (castPanel) {
             AlertDialog(
-                onDismissRequest = { castPanel = false },
+                onDismissRequest = { castPanel = false; markInteraction() },
                 confirmButton = {},
                 title = { Text(if (casting != null) "正在投屏：${casting!!.friendlyName}" else "投屏到设备") },
                 text = {

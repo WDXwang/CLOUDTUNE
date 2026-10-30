@@ -91,6 +91,7 @@ fun SelectAllCheckbox(
  * @param onToggleSelect 多选模式下切换选中
  * @param onVideoClick 点击视频文件（进入视频播放）
  * @param onRingtoneClick 点击“制作铃声”
+ * @param showAccountName 是否在副标题中显示所属网盘（聚合首页跨盘搜索结果使用）
  */
 @Composable
 fun MusicFileList(
@@ -104,14 +105,24 @@ fun MusicFileList(
     modifier: Modifier = Modifier,
     onVideoClick: (CloudFile) -> Unit = {},
     onRingtoneClick: (CloudFile) -> Unit = {},
+    showAccountName: Boolean = false,
 ) {
+    // 副标题：可选附上所属网盘名 + 文件大小
+    fun subtitleOf(file: CloudFile): String {
+        val size = MusicUtils.formatSize(file.size)
+        return if (showAccountName && !file.accountName.isNullOrBlank()) {
+            "${file.accountName} · $size"
+        } else {
+            size
+        }
+    }
     LazyColumn(modifier = modifier.fillMaxWidth()) {
-        itemsIndexed(files, key = { _, f -> f.id }) { index, file ->
+        itemsIndexed(files, key = { _, f -> "${f.accountId ?: "local"}:${f.id}" }) { index, file ->
             if (file.isDir) {
                 ListRow(
                     icon = Icons.Filled.Folder,
                     title = file.name,
-                    subtitle = "",
+                    subtitle = if (showAccountName && !file.accountName.isNullOrBlank()) file.accountName!! else "",
                     tint = MaterialTheme.colorScheme.primary,
                     showCheckbox = false,
                     checked = false,
@@ -123,7 +134,7 @@ fun MusicFileList(
                 ListRow(
                     icon = Icons.Filled.Movie,
                     title = MusicUtils.baseName(file.name),
-                    subtitle = MusicUtils.formatSize(file.size),
+                    subtitle = subtitleOf(file),
                     tint = MaterialTheme.colorScheme.tertiary,
                     showCheckbox = false,
                     checked = false,
@@ -136,7 +147,7 @@ fun MusicFileList(
                 ListRow(
                     icon = Icons.Filled.MusicNote,
                     title = MusicUtils.baseName(file.name),
-                    subtitle = MusicUtils.formatSize(file.size),
+                    subtitle = subtitleOf(file),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     showCheckbox = selectionMode,
                     checked = file.id in selectedIds,

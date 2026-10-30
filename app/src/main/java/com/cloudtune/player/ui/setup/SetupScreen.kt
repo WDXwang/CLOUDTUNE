@@ -32,11 +32,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cloudtune.player.core.model.BackendType
 
 /**
- * 首次配置 / 服务器设置页。
+ * 添加网盘页（首次配置也从这里进入）。
  *
- * 选择后端（WebDAV 推荐 / 天翼直连实验）→ 填写表单 → 测试连接 → 保存。
- * 保存成功后回调 [onConfigured] 进入主界面。
- * 天翼直连支持 [onOpenTianyiWebLogin] 进入 App 内 Web 登录页。
+ * 选择后端（WebDAV / 天翼云盘 / 123 云盘 / 夸克网盘）→ 填写表单 → 测试连接 → 保存。
+ * 保存成功后回调 [onConfigured] 进入主界面 / 返回网盘管理页。
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -58,22 +57,35 @@ fun SetupScreen(
             .padding(20.dp),
     ) {
         Spacer(Modifier.height(24.dp))
-        Text("连接你的云盘", style = MaterialTheme.typography.headlineMedium)
+        Text("添加网盘", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(4.dp))
         Text(
-            "选择一种方式连接可播放的音乐文件",
+            "可以添加多条存储（多个 WebDAV / 多个网盘账号），在文件页统一聚合浏览",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(24.dp))
 
-        // ===== 后端二选一 =====
+        // ===== 显示名称 =====
+        OutlinedTextField(
+            value = viewModel.accountName,
+            onValueChange = { viewModel.accountName = it },
+            label = { Text("显示名称（可留空）") },
+            placeholder = { Text("例如：家里的 AList") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(20.dp))
+
+        // ===== 后端选择 =====
         Text("后端类型", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             val options = listOf(
-                BackendType.WEBDAV to "WebDAV（推荐）",
-                BackendType.TIANYI_DIRECT to "天翼直连（实验）",
+                BackendType.WEBDAV to "WebDAV",
+                BackendType.TIANYI_DIRECT to "天翼",
+                BackendType.PAN123 to "123",
+                BackendType.QUARK to "夸克",
             )
             options.forEachIndexed { index, (type, label) ->
                 SegmentedButton(
@@ -95,6 +107,8 @@ fun SetupScreen(
                 onOpenTianyiWebLogin,
                 onOpenTianyiQrLogin,
             )
+            BackendType.PAN123 -> Pan123Form(viewModel)
+            BackendType.QUARK -> QuarkForm(viewModel)
         }
 
         // ===== 测试结果 =====
@@ -132,7 +146,7 @@ fun SetupScreen(
                 enabled = !viewModel.saving,
                 modifier = Modifier.weight(1f),
             ) {
-                Text("保存并进入")
+                Text("保存")
             }
         }
         Spacer(Modifier.height(32.dp))
@@ -247,6 +261,91 @@ private fun TianyiForm(
         onValueChange = { vm.tianyiRootFolderId = it },
         label = { Text("根目录文件夹 ID") },
         placeholder = { Text("-11") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** 123 云盘表单：账号密码换取 token（token 仅保存在本机） */
+@Composable
+private fun Pan123Form(vm: SetupViewModel) {
+    Text(
+        "使用 123 云盘账号密码登录，换取 JWT 会话（实验性，接口可能随官方调整失效）。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = vm.pan123Passport,
+        onValueChange = { vm.pan123Passport = it },
+        label = { Text("账号（手机号 / 邮箱）") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = vm.pan123Password,
+        onValueChange = { vm.pan123Password = it },
+        label = { Text("密码") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedButton(
+        onClick = { vm.loginPan123() },
+        enabled = !vm.pan123LoggingIn,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(if (vm.pan123LoggingIn) "登录中…" else "登录获取会话")
+    }
+    if (vm.pan123Token.isNotBlank()) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "✓ 已获取登录会话，可以测试连接",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+    vm.pan123LoginMessage?.let {
+        Spacer(Modifier.height(8.dp))
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = vm.pan123RootFolderId,
+        onValueChange = { vm.pan123RootFolderId = it },
+        label = { Text("起始目录 ID") },
+        placeholder = { Text("0（根目录）") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** 夸克网盘表单：粘贴浏览器 Cookie */
+@Composable
+private fun QuarkForm(vm: SetupViewModel) {
+    Text(
+        "在电脑浏览器登录 pan.quark.cn 后，从开发者工具复制 Cookie（需包含 __puus 等字段），" +
+            "粘贴到下方。Cookie 仅保存在本机，换号需重新获取。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = vm.quarkCookie,
+        onValueChange = { vm.quarkCookie = it },
+        label = { Text("Cookie") },
+        placeholder = { Text("粘贴完整 Cookie 字符串") },
+        minLines = 4,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = vm.quarkRootFid,
+        onValueChange = { vm.quarkRootFid = it },
+        label = { Text("起始目录 fid") },
+        placeholder = { Text("0（根目录）") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )

@@ -5,10 +5,21 @@ import kotlinx.serialization.Serializable
 /**
  * 云端后端类型。
  * - [WEBDAV]：连接自建 AList（或任意 WebDAV 服务），默认且推荐，风险隔离在服务端。
- * - [TIANYI_DIRECT]：App 内直连天翼云盘非官方 Web API（实验性，使用粘贴 Cookie 登录）。
+ * - [TIANYI_DIRECT]：App 内直连天翼云盘非官方 Web API（实验性，使用粘贴 Cookie / 扫码会话登录）。
+ * - [PAN123]：123 云盘（实验性，账号密码换取 token）。
+ * - [QUARK]：夸克网盘（实验性，粘贴浏览器 Cookie）。
  */
 @Serializable
-enum class BackendType { WEBDAV, TIANYI_DIRECT }
+enum class BackendType { WEBDAV, TIANYI_DIRECT, PAN123, QUARK }
+
+/** 后端类型的展示名称。 */
+val BackendType.displayName: String
+    get() = when (this) {
+        BackendType.WEBDAV -> "WebDAV / AList"
+        BackendType.TIANYI_DIRECT -> "天翼云盘"
+        BackendType.PAN123 -> "123 云盘"
+        BackendType.QUARK -> "夸克网盘"
+    }
 
 /**
  * 服务器 / 账号配置。不同后端只使用其中一部分字段。
@@ -27,6 +38,15 @@ enum class BackendType { WEBDAV, TIANYI_DIRECT }
  * @param tianyiAccessToken 会话刷新用 token
  * @param tianyiRefreshToken token 续期用 refreshToken
  * @param tianyiRootFolderId 个人云根目录文件夹 ID，默认 -11
+ *
+ * 123 云盘字段：
+ * @param pan123Passport 登录账号（仅用于展示 / 重新登录）
+ * @param pan123Token 登录后换到的 JWT（Bearer）
+ * @param pan123RootFolderId 起始目录 fileId，根目录为 0
+ *
+ * 夸克网盘字段：
+ * @param quarkCookie 从 pc.quark.cn 登录后复制的 Cookie
+ * @param quarkRootFid 起始目录 fid，根目录为 0
  */
 @Serializable
 data class ServerConfig(
@@ -42,6 +62,27 @@ data class ServerConfig(
     val tianyiSessionSecret: String = "",
     val tianyiAccessToken: String = "",
     val tianyiRefreshToken: String = "",
+    val pan123Passport: String = "",
+    val pan123Token: String = "",
+    val pan123RootFolderId: String = "0",
+    val quarkCookie: String = "",
+    val quarkRootFid: String = "0",
+)
+
+/**
+ * 一条「存储」记录：用户可以添加多个网盘 / WebDAV，统一在文件页聚合展示。
+ *
+ * @param id 本地生成的唯一标识（UUID），用于把目录项 / 收藏路由回对应数据源
+ * @param name 用户自定义显示名，例如「家里的 AList」「天翼主号」
+ * @param enabled 停用后不在聚合首页出现，也不再参与跨盘搜索
+ */
+@Serializable
+data class StorageAccount(
+    val id: String,
+    val name: String,
+    val config: ServerConfig,
+    val enabled: Boolean = true,
+    val createdAt: Long = 0L,
 )
 
 /**
@@ -50,6 +91,10 @@ data class ServerConfig(
  * id 的含义随后端不同：
  * - WebDAV：相对 davPath 的完整 href 路径，例如 /音乐/专辑/01.mp3
  * - 天翼直连：文件（夹）数字 ID
+ * - 123 云盘 / 夸克网盘：平台侧 fileId / fid
+ *
+ * [accountId] / [accountName] 记录该项属于哪一条存储（多网盘聚合后用于把播放请求、
+ * 收藏路由回正确的数据源）；本地文件与历史遗留数据可能为 null。
  */
 @Serializable
 data class CloudFile(
@@ -61,6 +106,8 @@ data class CloudFile(
     val lastModified: Long = 0L,
     val mimeType: String? = null,
     val isLocal: Boolean = false,
+    val accountId: String? = null,
+    val accountName: String? = null,
 ) {
     /** 是否为可播放的音乐文件（按扩展名判断） */
     fun isMusic(): Boolean = !isDir && com.cloudtune.player.core.util.MusicUtils.isMusicFile(name)

@@ -4,6 +4,7 @@ import android.content.Context
 import com.cloudtune.player.core.model.CloudFile
 import com.cloudtune.player.core.model.MusicTrack
 import com.cloudtune.player.core.model.ServerConfig
+import com.cloudtune.player.core.model.StorageAccount
 import com.cloudtune.player.core.model.StreamSource
 import com.cloudtune.player.data.CloudDataSource
 import com.cloudtune.player.data.CloudDataSourceFactory
@@ -14,17 +15,20 @@ import com.cloudtune.player.data.db.PlaylistDao
 import com.cloudtune.player.data.db.PlaylistEntity
 import com.cloudtune.player.data.db.PlaylistTrackEntity
 import com.cloudtune.player.data.settings.SettingsStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
 /**
  * [MusicRepository] 默认实现：
- * - 配置读写委托给 [SettingsStore]；
- * - 持有当前后端数据源，配置变更时通过 [Mutex] 线程安全地重建；
+ * - 多存储账号读写委托给 [SettingsStore]；
+ * - 每条存储持有一个数据源（按 accountId 懒加载、配置变更时重建、删除时关闭）；
+ * - 浏览结果统一盖上 `accountId / accountName`，播放时据此路由；
  * - 收藏通过 [FavoriteDao] 本地落库，CloudFile 序列化进 fileJson。
  */
 class MusicRepositoryImpl(
@@ -39,22 +43,43 @@ class MusicRepositoryImpl(
 
     private val mutex = Mutex()
 
-    /** 当前使用的数据源；未配置时为 null。 */
-    @Volatile
-    private var current: CloudDataSource? = null
+    /** accountId -> 数据源（按需创建，避免一次为所有网盘建立连接）。 */
+    private val sources = mutableMapOf<String, CloudDataSource>()
 
-    override val config: Flow<ServerConfig?> get() = settings.config
+    override val accounts: Flow<List<StorageAccount>> = settings.accounts
 
-    override suspend fun saveConfig(config: ServerConfig) {
-        settings.saveConfig(config)
-        rebuild(config)
+    override suspend fun addAccount(account: StorageAccount) {
+        updateAccounts { it + account }
     }
 
-    override suspend fun clearConfig() {
-        settings.clearConfig()
+    override suspend fun updateAccount(account: StorageAccount) {
+        updateAccounts { list -> list.map { if (it.id == account.id) account else it } }
+        // 配置可能变化，释放旧连接，下次访问时按新配置重建
         mutex.withLock {
-            current?.close()
-            current = null
+            sources.remove(account.id)?.close()
+        }
+    }
+
+    override suspend fun removeAccount(id: String) {
+        updateAccounts { list -> list.filterNot { it.id == id } }
+        mutex.withLock {
+            sources.remove(id)?.close()
+        }
+    }
+
+    override suspend fun clearAccounts() {
+        settings.clearAccounts()
+        mutex.withLock {
+            sources.values.forEach { runCatching { it.close() } }
+            sources.clear()
+        }
+    }
+
+    /** 读 - 改 - 写 账号列表（并发下串行化，避免丢失更新）。 */
+    private suspend fun updateAccounts(block: (List<StorageAccount>) -> List<StorageAccount>) {
+        mutex.withLock {
+            val current = settings.accounts.first()
+            settings.saveAccounts(block(current))
         }
     }
 
@@ -64,23 +89,76 @@ class MusicRepositoryImpl(
         return try {
             ds.test()
         } finally {
-            ds.close()
+            runCatching { ds.close() }
         }
     }
 
-    override suspend fun list(dir: CloudFile?): List<CloudFile> =
-        ensureSource().list(dir)
+    override suspend fun list(accountId: String, dir: CloudFile?): List<CloudFile> {
+        val account = accountById(accountId)
+            ?: throw IllegalStateException("存储不存在或已被删除，请刷新后重试。")
+        return ensureSource(account).list(dir).map {
+            it.copy(accountId = account.id, accountName = account.name)
+        }
+    }
+
+    /**
+     * 存储内递归搜索：广度优先，目录数上限 [MAX_SEARCH_FOLDERS]、层级上限 [MAX_SEARCH_DEPTH]，
+     * 单个目录失败不影响整体（网络波动时尽量多返回结果）。
+     */
+    override suspend fun search(accountId: String, query: String): List<CloudFile> {
+        val q = query.trim()
+        if (q.isBlank()) return emptyList()
+        val account = accountById(accountId)
+            ?: throw IllegalStateException("存储不存在或已被删除，请刷新后重试。")
+        val ds = ensureSource(account)
+
+        val result = mutableListOf<CloudFile>()
+        val queue = ArrayDeque<Pair<CloudFile?, Int>>()
+        queue.addLast(null to 0)
+        var visited = 0
+
+        while (queue.isNotEmpty() && visited < MAX_SEARCH_FOLDERS && result.size < MAX_RESULTS) {
+            val (dir, depth) = queue.removeFirst()
+            visited++
+            val children = try {
+                ds.list(dir)
+            } catch (_: Exception) {
+                continue
+            }
+            for (child in children) {
+                if (child.isDir) {
+                    if (depth + 1 <= MAX_SEARCH_DEPTH) queue.addLast(child to (depth + 1))
+                } else if (child.name.contains(q, ignoreCase = true)) {
+                    result += child.copy(accountId = account.id, accountName = account.name)
+                    if (result.size >= MAX_RESULTS) break
+                }
+            }
+        }
+        return result
+    }
 
     /** 本地音乐扫描（IO 线程执行）。 */
     override suspend fun listLocalMusic(): List<CloudFile> =
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        withContext(Dispatchers.IO) {
             com.cloudtune.player.data.local.LocalMusicScanner(context).scan()
         }
 
     override suspend fun resolveStream(file: CloudFile): StreamSource {
         // 本地文件：直接返回 content:// URI，由 DefaultDataSource 读取，不走网络
         if (file.isLocal) return StreamSource(url = file.id)
-        return ensureSource().resolveStream(file)
+
+        val accountId = file.accountId ?: run {
+            // 兼容旧收藏 / 歌单：没有归属账号时，若仅添加了一条存储则自动落到该存储
+            val all = settings.accounts.first()
+            when (all.size) {
+                0 -> throw IllegalStateException("尚未配置任何网盘，请先在设置中添加存储。")
+                1 -> all.first().id
+                else -> throw IllegalStateException("该文件未记录所属网盘，请在文件页重新打开播放。")
+            }
+        }
+        val account = accountById(accountId)
+            ?: throw IllegalStateException("存储不存在或已被删除。")
+        return ensureSource(account).resolveStream(file)
     }
 
     override fun observeFavorites(): Flow<List<MusicTrack>> =
@@ -103,7 +181,7 @@ class MusicRepositoryImpl(
         playlistDao.observeAll().map { list ->
             list.map { p ->
                 // 并行查曲数：用 withContext(IO) 批量查询避免逐条阻塞主线程
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                withContext(Dispatchers.IO) {
                     com.cloudtune.player.core.model.PlaylistInfo(
                         id = p.id,
                         name = p.name,
@@ -151,23 +229,13 @@ class MusicRepositoryImpl(
 
     // ---------- 内部 ----------
 
-    private suspend fun rebuild(c: ServerConfig) = mutex.withLock {
-        current?.close()
-        current = factory.create(c)
-    }
+    private suspend fun accountById(id: String): StorageAccount? =
+        settings.accounts.first().firstOrNull { it.id == id }
 
-    /**
-     * 取当前数据源；若尚未初始化（例如进程重启后直接进入浏览页），
-     * 尝试从已持久化的配置重建一次。仍无配置则抛带明确信息的异常。
-     */
-    private suspend fun ensureSource(): CloudDataSource {
-        current?.let { return it }
-        return mutex.withLock {
-            current?.let { return it }
-            val saved = settings.config.first()
-                ?: throw IllegalStateException("尚未配置云盘服务器，请先在设置中登录 / 配置。")
-            factory.create(saved).also { current = it }
-        }
+    /** 取（或懒创建）某存储的数据源。 */
+    private suspend fun ensureSource(account: StorageAccount): CloudDataSource = mutex.withLock {
+        sources[account.id]?.let { return@withLock it }
+        factory.create(account.config).also { sources[account.id] = it }
     }
 
     private fun FavoriteEntity.toTrackOrNull(json: Json): MusicTrack? =
@@ -205,4 +273,10 @@ class MusicRepositoryImpl(
                     durationMs = 0L,
                 )
             }
+
+    private companion object {
+        const val MAX_SEARCH_DEPTH = 5
+        const val MAX_SEARCH_FOLDERS = 300
+        const val MAX_RESULTS = 200
+    }
 }
