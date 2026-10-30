@@ -13,6 +13,7 @@ import com.cloudtune.player.core.model.ServerConfig
 import com.cloudtune.player.core.model.StorageAccount
 import com.cloudtune.player.core.model.displayName
 import com.cloudtune.player.data.MusicRepository
+import com.cloudtune.player.data.guangya.GuangYaAuth
 import com.cloudtune.player.data.pan123.Pan123Auth
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -21,7 +22,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
- * 「添加网盘」页 ViewModel：收集表单、测试连接、登录（123 云盘）、保存为新存储。
+ * 「添加网盘」页 ViewModel：收集表单、测试连接、登录（123 云盘 / 光鸭云盘）、保存为新存储。
  *
  * 手机 Web 登录页会把抓到的 Cookie 写入本页的 SavedStateHandle，此处自动回填到表单。
  */
@@ -72,10 +73,24 @@ class SetupViewModel(
     var pan123Passport by mutableStateOf("")
     var pan123Password by mutableStateOf("")
     var pan123Token by mutableStateOf("")
+    var pan123LoginUuid by mutableStateOf("")
     var pan123RootFolderId by mutableStateOf("0")
     var pan123LoggingIn by mutableStateOf(false)
         private set
     var pan123LoginMessage by mutableStateOf<String?>(null)
+        private set
+
+    // ---- 光鸭云盘表单字段 ----
+    var guangYaAccount by mutableStateOf("")
+    var guangYaPassword by mutableStateOf("")
+    var guangYaAccessToken by mutableStateOf("")
+    var guangYaRefreshToken by mutableStateOf("")
+    var guangYaDeviceId by mutableStateOf("")
+    var guangYaDeviceSign by mutableStateOf("")
+    var guangYaRootFolderId by mutableStateOf("")
+    var guangYaLoggingIn by mutableStateOf(false)
+        private set
+    var guangYaLoginMessage by mutableStateOf<String?>(null)
         private set
 
     // ---- 夸克网盘表单字段 ----
@@ -161,13 +176,48 @@ class SetupViewModel(
                 } finally {
                     runCatching { client.dispatcher.executorService.shutdown() }
                 }
-            }.onSuccess { token ->
-                pan123Token = token
+            }.onSuccess { session ->
+                pan123Token = session.token
+                pan123LoginUuid = session.loginUuid
                 pan123LoginMessage = "登录成功，可以测试连接"
             }.onFailure { e ->
                 pan123LoginMessage = "登录失败：${e.message ?: "未知错误"}"
             }
             pan123LoggingIn = false
+        }
+    }
+
+    /** 光鸭云盘账号密码登录，换到 access token 后回填表单。 */
+    fun loginGuangYa() {
+        if (guangYaLoggingIn) return
+        if (guangYaAccount.isBlank() || guangYaPassword.isBlank()) {
+            guangYaLoginMessage = "请先填写账号与密码"
+            return
+        }
+        viewModelScope.launch {
+            guangYaLoggingIn = true
+            guangYaLoginMessage = null
+            runCatching {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .build()
+                try {
+                    val device = GuangYaAuth.deviceOf(guangYaDeviceId, guangYaDeviceSign)
+                    GuangYaAuth.login(guangYaAccount, guangYaPassword, client, device)
+                } finally {
+                    runCatching { client.dispatcher.executorService.shutdown() }
+                }
+            }.onSuccess { session ->
+                guangYaAccessToken = session.accessToken
+                guangYaRefreshToken = session.refreshToken
+                guangYaDeviceId = session.deviceId
+                guangYaDeviceSign = session.deviceSign
+                guangYaLoginMessage = "登录成功，可以测试连接"
+            }.onFailure { e ->
+                guangYaLoginMessage = "登录失败：${e.message ?: "未知错误"}"
+            }
+            guangYaLoggingIn = false
         }
     }
 
@@ -196,6 +246,7 @@ class SetupViewModel(
             backend = BackendType.PAN123,
             pan123Passport = pan123Passport.trim(),
             pan123Token = pan123Token,
+            pan123LoginUuid = pan123LoginUuid,
             pan123RootFolderId = pan123RootFolderId.trim().ifBlank { "0" },
         )
 
@@ -203,6 +254,16 @@ class SetupViewModel(
             backend = BackendType.QUARK,
             quarkCookie = quarkCookie.trim(),
             quarkRootFid = quarkRootFid.trim().ifBlank { "0" },
+        )
+
+        BackendType.GUANGYA -> ServerConfig(
+            backend = BackendType.GUANGYA,
+            guangYaAccount = guangYaAccount.trim(),
+            guangYaAccessToken = guangYaAccessToken,
+            guangYaRefreshToken = guangYaRefreshToken,
+            guangYaDeviceId = guangYaDeviceId,
+            guangYaDeviceSign = guangYaDeviceSign,
+            guangYaRootFolderId = guangYaRootFolderId.trim(),
         )
     }
 

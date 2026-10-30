@@ -2,6 +2,7 @@ package com.cloudtune.player.data
 
 import com.cloudtune.player.core.model.BackendType
 import com.cloudtune.player.core.model.ServerConfig
+import com.cloudtune.player.data.guangya.GuangYaCloudDataSource
 import com.cloudtune.player.data.pan123.Pan123CloudDataSource
 import com.cloudtune.player.data.quark.QuarkCloudDataSource
 import com.cloudtune.player.data.tianyi.TianyiCloudDataSource
@@ -22,6 +23,7 @@ class DefaultCloudDataSourceFactory : CloudDataSourceFactory {
             BackendType.TIANYI_DIRECT -> TianyiCloudDataSource(config, client)
             BackendType.PAN123 -> Pan123CloudDataSource(config, client)
             BackendType.QUARK -> QuarkCloudDataSource(config, client)
+            BackendType.GUANGYA -> GuangYaCloudDataSource(config, client)
         }
     }
 

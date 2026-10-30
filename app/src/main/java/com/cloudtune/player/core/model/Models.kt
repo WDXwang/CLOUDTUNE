@@ -8,9 +8,10 @@ import kotlinx.serialization.Serializable
  * - [TIANYI_DIRECT]：App 内直连天翼云盘非官方 Web API（实验性，使用粘贴 Cookie / 扫码会话登录）。
  * - [PAN123]：123 云盘（实验性，账号密码换取 token）。
  * - [QUARK]：夸克网盘（实验性，粘贴浏览器 Cookie）。
+ * - [GUANGYA]：光鸭云盘（实验性，账号密码登录换取令牌）。
  */
 @Serializable
-enum class BackendType { WEBDAV, TIANYI_DIRECT, PAN123, QUARK }
+enum class BackendType { WEBDAV, TIANYI_DIRECT, PAN123, QUARK, GUANGYA }
 
 /** 后端类型的展示名称。 */
 val BackendType.displayName: String
@@ -19,6 +20,7 @@ val BackendType.displayName: String
         BackendType.TIANYI_DIRECT -> "天翼云盘"
         BackendType.PAN123 -> "123 云盘"
         BackendType.QUARK -> "夸克网盘"
+        BackendType.GUANGYA -> "光鸭云盘"
     }
 
 /**
@@ -43,10 +45,19 @@ val BackendType.displayName: String
  * @param pan123Passport 登录账号（仅用于展示 / 重新登录）
  * @param pan123Token 登录后换到的 JWT（Bearer）
  * @param pan123RootFolderId 起始目录 fileId，根目录为 0
+ * @param pan123LoginUuid 请求签名用的设备标识（32 位十六进制，长期复用）
  *
  * 夸克网盘字段：
  * @param quarkCookie 从 pc.quark.cn 登录后复制的 Cookie
  * @param quarkRootFid 起始目录 fid，根目录为 0
+ *
+ * 光鸭云盘字段：
+ * @param guangYaAccount 登录账号（手机号 / 邮箱 / 用户名）
+ * @param guangYaAccessToken 登录换到的 access token
+ * @param guangYaRefreshToken 令牌续期用 refresh token
+ * @param guangYaDeviceId 业务接口 did 头所需的设备 id（32 位十六进制）
+ * @param guangYaDeviceSign 账号接口 X-Device-Sign 所需设备签名（wdi10. 开头）
+ * @param guangYaRootFolderId 起始目录 id，根目录为空串
  */
 @Serializable
 data class ServerConfig(
@@ -65,8 +76,15 @@ data class ServerConfig(
     val pan123Passport: String = "",
     val pan123Token: String = "",
     val pan123RootFolderId: String = "0",
+    val pan123LoginUuid: String = "",
     val quarkCookie: String = "",
     val quarkRootFid: String = "0",
+    val guangYaAccount: String = "",
+    val guangYaAccessToken: String = "",
+    val guangYaRefreshToken: String = "",
+    val guangYaDeviceId: String = "",
+    val guangYaDeviceSign: String = "",
+    val guangYaRootFolderId: String = "",
 )
 
 /**

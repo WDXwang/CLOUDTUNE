@@ -34,7 +34,7 @@ import com.cloudtune.player.core.model.BackendType
 /**
  * 添加网盘页（首次配置也从这里进入）。
  *
- * 选择后端（WebDAV / 天翼云盘 / 123 云盘 / 夸克网盘）→ 填写表单 → 测试连接 → 保存。
+ * 选择后端（WebDAV / 天翼云盘 / 123 云盘 / 夸克网盘 / 光鸭云盘）→ 填写表单 → 测试连接 → 保存。
  * 保存成功后回调 [onConfigured] 进入主界面 / 返回网盘管理页。
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -86,6 +86,7 @@ fun SetupScreen(
                 BackendType.TIANYI_DIRECT to "天翼",
                 BackendType.PAN123 to "123",
                 BackendType.QUARK to "夸克",
+                BackendType.GUANGYA to "光鸭",
             )
             options.forEachIndexed { index, (type, label) ->
                 SegmentedButton(
@@ -109,6 +110,7 @@ fun SetupScreen(
             )
             BackendType.PAN123 -> Pan123Form(viewModel)
             BackendType.QUARK -> QuarkForm(viewModel)
+            BackendType.GUANGYA -> GuangYaForm(viewModel)
         }
 
         // ===== 测试结果 =====
@@ -317,6 +319,63 @@ private fun Pan123Form(vm: SetupViewModel) {
         onValueChange = { vm.pan123RootFolderId = it },
         label = { Text("起始目录 ID") },
         placeholder = { Text("0（根目录）") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** 光鸭云盘表单：账号密码换取 access token（令牌仅保存在本机） */
+@Composable
+private fun GuangYaForm(vm: SetupViewModel) {
+    Text(
+        "使用光鸭云盘账号密码登录，换取访问令牌（实验性，接口可能随官方调整失效）。" +
+            "手机号可直接填写 11 位数字，邮箱填写完整地址。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = vm.guangYaAccount,
+        onValueChange = { vm.guangYaAccount = it },
+        label = { Text("账号（手机号 / 邮箱）") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = vm.guangYaPassword,
+        onValueChange = { vm.guangYaPassword = it },
+        label = { Text("密码") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedButton(
+        onClick = { vm.loginGuangYa() },
+        enabled = !vm.guangYaLoggingIn,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(if (vm.guangYaLoggingIn) "登录中…" else "登录获取令牌")
+    }
+    if (vm.guangYaAccessToken.isNotBlank()) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "✓ 已获取访问令牌，可以测试连接",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+    vm.guangYaLoginMessage?.let {
+        Spacer(Modifier.height(8.dp))
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = vm.guangYaRootFolderId,
+        onValueChange = { vm.guangYaRootFolderId = it },
+        label = { Text("起始目录 ID") },
+        placeholder = { Text("留空表示根目录") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )

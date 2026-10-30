@@ -212,5 +212,7 @@ private fun accountSummary(account: StorageAccount): String {
         BackendType.PAN123 -> "${c.backend.displayName} · " +
             if (c.pan123Passport.isNotBlank()) c.pan123Passport else "已登录"
         BackendType.QUARK -> "${c.backend.displayName} · Cookie 已配置"
+        BackendType.GUANGYA -> "${c.backend.displayName} · " +
+            if (c.guangYaAccount.isNotBlank()) c.guangYaAccount else "已登录"
     }
 }
