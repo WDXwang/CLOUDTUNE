@@ -78,6 +78,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.cloudtune.player.CloudTuneApp
 import com.cloudtune.player.core.model.CloudFile
@@ -367,6 +368,8 @@ class VideoActivity : ComponentActivity() {
                 PlayerView(ctx).apply {
                     player = exo
                     useController = false
+                    // 默认 FIT 会按比例留黑边；ZOOM 保持比例并裁剪铺满整个画面
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     setBackgroundColor(android.graphics.Color.BLACK)
                 }
             },
