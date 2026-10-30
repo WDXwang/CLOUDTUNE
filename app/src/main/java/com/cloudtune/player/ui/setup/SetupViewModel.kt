@@ -22,7 +22,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
- * 「添加网盘」页 ViewModel：收集表单、测试连接、登录（123 云盘 / 光鸭云盘）、保存为新存储。
+ * 「添加网盘」页 ViewModel：收集表单、测试连接、登录（123 云盘 / 光鸭云盘短信验证码）、保存为新存储。
  *
  * 手机 Web 登录页会把抓到的 Cookie 写入本页的 SavedStateHandle，此处自动回填到表单。
  */
@@ -81,8 +81,10 @@ class SetupViewModel(
         private set
 
     // ---- 光鸭云盘表单字段 ----
+    /** 手机号（11 位数字或 +86 开头） */
     var guangYaAccount by mutableStateOf("")
-    var guangYaPassword by mutableStateOf("")
+    /** 短信验证码 */
+    var guangYaCode by mutableStateOf("")
     var guangYaAccessToken by mutableStateOf("")
     var guangYaRefreshToken by mutableStateOf("")
     var guangYaDeviceId by mutableStateOf("")
@@ -90,8 +92,12 @@ class SetupViewModel(
     var guangYaRootFolderId by mutableStateOf("")
     var guangYaLoggingIn by mutableStateOf(false)
         private set
+    var guangYaSendingCode by mutableStateOf(false)
+        private set
     var guangYaLoginMessage by mutableStateOf<String?>(null)
         private set
+    /** 发送验证码后拿到的验证会话，登录时必须与之一致 */
+    private var guangYaChallenge: GuangYaAuth.SmsChallenge? = null
 
     // ---- 夸克网盘表单字段 ----
     var quarkCookie by mutableStateOf("")
@@ -187,11 +193,51 @@ class SetupViewModel(
         }
     }
 
-    /** 光鸭云盘账号密码登录，换到 access token 后回填表单。 */
-    fun loginGuangYa() {
+    /** 发送光鸭云盘短信验证码。 */
+    fun sendGuangYaSmsCode() {
+        if (guangYaSendingCode) return
+        if (guangYaAccount.isBlank()) {
+            guangYaLoginMessage = "请先填写手机号"
+            return
+        }
+        viewModelScope.launch {
+            guangYaSendingCode = true
+            guangYaLoginMessage = null
+            runCatching {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .build()
+                try {
+                    val device = GuangYaAuth.deviceOf(guangYaDeviceId, guangYaDeviceSign)
+                    GuangYaAuth.sendSmsCode(guangYaAccount, client, device).also { challenge ->
+                        guangYaChallenge = challenge
+                        guangYaDeviceId = device.deviceId
+                        guangYaDeviceSign = device.deviceSign
+                    }
+                } finally {
+                    runCatching { client.dispatcher.executorService.shutdown() }
+                }
+            }.onSuccess {
+                guangYaLoginMessage = "验证码已发送，请查看短信"
+            }.onFailure { e ->
+                guangYaChallenge = null
+                guangYaLoginMessage = "发送失败：${e.message ?: "未知错误"}"
+            }
+            guangYaSendingCode = false
+        }
+    }
+
+    /** 光鸭云盘短信验证码登录，换到 access token 后回填表单。 */
+    fun loginGuangYaBySms() {
         if (guangYaLoggingIn) return
-        if (guangYaAccount.isBlank() || guangYaPassword.isBlank()) {
-            guangYaLoginMessage = "请先填写账号与密码"
+        val challenge = guangYaChallenge
+        if (challenge == null) {
+            guangYaLoginMessage = "请先获取验证码"
+            return
+        }
+        if (guangYaCode.isBlank()) {
+            guangYaLoginMessage = "请填写短信验证码"
             return
         }
         viewModelScope.launch {
@@ -204,7 +250,7 @@ class SetupViewModel(
                     .build()
                 try {
                     val device = GuangYaAuth.deviceOf(guangYaDeviceId, guangYaDeviceSign)
-                    GuangYaAuth.login(guangYaAccount, guangYaPassword, client, device)
+                    GuangYaAuth.loginBySms(guangYaAccount, guangYaCode, challenge, client, device)
                 } finally {
                     runCatching { client.dispatcher.executorService.shutdown() }
                 }

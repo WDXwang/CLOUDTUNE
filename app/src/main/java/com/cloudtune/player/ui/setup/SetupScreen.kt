@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -324,12 +327,12 @@ private fun Pan123Form(vm: SetupViewModel) {
     )
 }
 
-/** 光鸭云盘表单：账号密码换取 access token（令牌仅保存在本机） */
+/** 光鸭云盘表单：手机号短信验证码登录；也可直接粘贴开发者 token 跳过短信 */
 @Composable
 private fun GuangYaForm(vm: SetupViewModel) {
     Text(
-        "使用光鸭云盘账号密码登录，换取访问令牌（实验性，接口可能随官方调整失效）。" +
-            "手机号可直接填写 11 位数字，邮箱填写完整地址。",
+        "使用光鸭云盘手机号接收短信验证码登录（实验性，接口可能随官方调整失效）。" +
+            "若提示需要人机验证，可改用下方开发者 token。",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -337,26 +340,37 @@ private fun GuangYaForm(vm: SetupViewModel) {
     OutlinedTextField(
         value = vm.guangYaAccount,
         onValueChange = { vm.guangYaAccount = it },
-        label = { Text("账号（手机号 / 邮箱）") },
+        label = { Text("手机号") },
+        placeholder = { Text("13800138000 或 +86 13800138000") },
         singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
         modifier = Modifier.fillMaxWidth(),
     )
     Spacer(Modifier.height(12.dp))
-    OutlinedTextField(
-        value = vm.guangYaPassword,
-        onValueChange = { vm.guangYaPassword = it },
-        label = { Text("密码") },
-        singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
-        modifier = Modifier.fillMaxWidth(),
-    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = vm.guangYaCode,
+            onValueChange = { vm.guangYaCode = it },
+            label = { Text("短信验证码") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        OutlinedButton(
+            onClick = { vm.sendGuangYaSmsCode() },
+            enabled = !vm.guangYaSendingCode && vm.guangYaAccount.isNotBlank(),
+        ) {
+            Text(if (vm.guangYaSendingCode) "发送中…" else "发送验证码")
+        }
+    }
     Spacer(Modifier.height(12.dp))
     OutlinedButton(
-        onClick = { vm.loginGuangYa() },
-        enabled = !vm.guangYaLoggingIn,
+        onClick = { vm.loginGuangYaBySms() },
+        enabled = !vm.guangYaLoggingIn && vm.guangYaCode.isNotBlank(),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(if (vm.guangYaLoggingIn) "登录中…" else "登录获取令牌")
+        Text(if (vm.guangYaLoggingIn) "登录中…" else "验证码登录")
     }
     if (vm.guangYaAccessToken.isNotBlank()) {
         Spacer(Modifier.height(8.dp))
@@ -370,6 +384,20 @@ private fun GuangYaForm(vm: SetupViewModel) {
         Spacer(Modifier.height(8.dp))
         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
+    Spacer(Modifier.height(16.dp))
+    Text(
+        "开发者 token（可选）：填写后跳过短信登录，适合短信被风控拦截时使用。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = vm.guangYaAccessToken,
+        onValueChange = { vm.guangYaAccessToken = it },
+        label = { Text("开发者 token") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
     Spacer(Modifier.height(12.dp))
     OutlinedTextField(
         value = vm.guangYaRootFolderId,

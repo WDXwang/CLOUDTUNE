@@ -56,7 +56,7 @@ object GuangYaAuth {
         if (normalized.isBlank() || password.isBlank()) error("请填写光鸭云盘账号和密码")
 
         val meta = metaFor(normalized)
-        var captchaToken = initCaptcha(client, device, meta)
+        var captchaToken = initCaptcha(client, device, ACTION_SIGNIN, meta)
 
         var attempt = 0
         while (true) {
@@ -65,7 +65,7 @@ object GuangYaAuth {
             if (code == "captcha_required" || code == "captcha_invalid") {
                 if (attempt >= 2) error("光鸭安全验证未通过，请稍后重试")
                 attempt++
-                captchaToken = initCaptcha(client, device, meta)
+                captchaToken = initCaptcha(client, device, ACTION_SIGNIN, meta)
                 continue
             }
             if (!isSuccess(json)) error(mapSigninError(json))
@@ -73,6 +73,78 @@ object GuangYaAuth {
         }
         @Suppress("UNREACHABLE_CODE")
         error("光鸭登录失败")
+    }
+
+    /** 短信验证码登录的中间态：验证会话 ID + 本次 captcha 令牌。 */
+    data class SmsChallenge(val verificationId: String, val captchaToken: String)
+
+    /**
+     * 发送短信验证码。
+     * @throws IllegalStateException 需要人机验证、发送过于频繁等，抛出可读文案。
+     */
+    suspend fun sendSmsCode(
+        account: String,
+        client: OkHttpClient,
+        device: Device,
+    ): SmsChallenge = withContext(Dispatchers.IO) {
+        val phone = normalizeAccount(account)
+        if (!phone.startsWith("+")) error("请填写手机号（11 位数字或 +86 开头）")
+        val captchaToken = initCaptcha(
+            client,
+            device,
+            ACTION_VERIFICATION,
+            JSONObject().put("phone_number", phone),
+        )
+        val body = JSONObject().apply {
+            put("phone_number", phone)
+            put("target", "ANY")
+            put("client_id", CLIENT_ID)
+        }.toString()
+        val builder = accountRequest(VERIFICATION, body, device)
+        if (captchaToken.isNotBlank()) builder.header("X-Captcha-Token", captchaToken)
+        val json = execute(client, builder.build())
+        if (!isSuccess(json)) error(mapSmsError(json))
+        val data = json.optJSONObject("data") ?: json
+        val id = firstNonBlank(data.optString("verification_id"), data.optString("verificationId"))
+        if (id.isBlank()) error("光鸭未返回验证会话，请稍后重试")
+        SmsChallenge(id, captchaToken)
+    }
+
+    /** 校验短信验证码并换取 access token。 */
+    suspend fun loginBySms(
+        account: String,
+        code: String,
+        challenge: SmsChallenge,
+        client: OkHttpClient,
+        device: Device,
+    ): Session = withContext(Dispatchers.IO) {
+        val phone = normalizeAccount(account)
+        if (code.isBlank()) error("请填写短信验证码")
+        val verifyBody = JSONObject().apply {
+            put("verification_id", challenge.verificationId)
+            put("verification_code", code.trim())
+            put("client_id", CLIENT_ID)
+        }.toString()
+        val verifyJson = execute(client, accountRequest(VERIFY, verifyBody, device).build())
+        if (!isSuccess(verifyJson)) error(mapSmsError(verifyJson))
+        val vData = verifyJson.optJSONObject("data") ?: verifyJson
+        val vToken = firstNonBlank(
+            vData.optString("verification_token"),
+            vData.optString("verificationToken"),
+        )
+        if (vToken.isBlank()) error("验证码校验失败，请重新获取")
+
+        val signinBody = JSONObject().apply {
+            put("verification_code", code.trim())
+            put("verification_token", vToken)
+            put("username", phone)
+            put("client_id", CLIENT_ID)
+        }.toString()
+        val builder = accountRequest(SIGNIN, signinBody, device)
+        if (challenge.captchaToken.isNotBlank()) builder.header("X-Captcha-Token", challenge.captchaToken)
+        val json = execute(client, builder.build())
+        if (!isSuccess(json)) error(mapSmsError(json))
+        parseSession(json, device)
     }
 
     /** 用 refresh token 续期；失败返回 null。 */
@@ -116,10 +188,15 @@ object GuangYaAuth {
         else -> JSONObject().put("username", account)
     }
 
-    private fun initCaptcha(client: OkHttpClient, device: Device, meta: JSONObject): String {
+    private fun initCaptcha(
+        client: OkHttpClient,
+        device: Device,
+        action: String,
+        meta: JSONObject,
+    ): String {
         val body = JSONObject().apply {
             put("client_id", CLIENT_ID)
-            put("action", "POST:/v1/auth/signin")
+            put("action", action)
             put("device_id", device.deviceId)
             put("captcha_token", "")
             put("meta", meta)
@@ -180,6 +257,22 @@ object GuangYaAuth {
             "password_required", "password_not_set" -> "该光鸭账号尚未设置密码，请改用网页登录"
             "verification_required", "verification_code_required" -> "光鸭要求短信验证，请改用网页登录"
             else -> serverMsg.ifBlank { "光鸭登录失败，请检查账号密码" }
+        }
+    }
+
+    private fun mapSmsError(json: JSONObject): String {
+        val code = json.optString("code").ifBlank { json.optString("error") }
+        val serverMsg = firstNonBlank(
+            json.optString("msg"), json.optString("message"), json.optString("error_description")
+        )
+        return when (code) {
+            "too_many_requests" -> "验证码发送过于频繁，请稍后再试"
+            "invalid_verification_code", "verification_code_invalid", "invalid_code" ->
+                "验证码错误或已失效，请重新获取"
+            "verification_expired", "verification_code_expired" -> "验证码已过期，请重新获取"
+            "captcha_required", "captcha_invalid" -> "光鸭要求人机验证，请改用开发者 token 登录"
+            "verification_required" -> "请先获取短信验证码"
+            else -> serverMsg.ifBlank { "光鸭登录失败（${code.ifBlank { "未知错误" }}）" }
         }
     }
 
@@ -244,7 +337,11 @@ object GuangYaAuth {
 
     private const val CAPTCHA_INIT = "$ACCOUNT_BASE/v1/shield/captcha/init"
     private const val SIGNIN = "$ACCOUNT_BASE/v1/auth/signin"
+    private const val VERIFICATION = "$ACCOUNT_BASE/v1/auth/verification"
+    private const val VERIFY = "$ACCOUNT_BASE/v1/auth/verification/verify"
     private const val AUTH_TOKEN = "$ACCOUNT_BASE/v1/auth/token"
+    private const val ACTION_SIGNIN = "POST:/v1/auth/signin"
+    private const val ACTION_VERIFICATION = "POST:/v1/auth/verification"
 
     private const val CLIENT_VERSION = "0.0.1"
     private const val SDK_VERSION = "9.1.3"
