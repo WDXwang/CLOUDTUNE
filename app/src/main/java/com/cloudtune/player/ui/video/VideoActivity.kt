@@ -120,7 +120,7 @@ class VideoActivity : ComponentActivity() {
     /** 全屏下返回键先退出全屏，而不是直接关闭 Activity。 */
     private val fullscreenBackCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
-            setFullscreen(false)
+            changeFullscreen(false)
         }
     }
 
@@ -181,7 +181,7 @@ class VideoActivity : ComponentActivity() {
                                 onEnterPip = { enterPip() },
                                 onClose = { finish() },
                                 isFullscreen = isFullscreen,
-                                onToggleFullscreen = { setFullscreen(!isFullscreen) },
+                                onToggleFullscreen = { changeFullscreen(!isFullscreen) },
                             )
                         }
                     } else {
@@ -283,7 +283,7 @@ class VideoActivity : ComponentActivity() {
      * 切换 竖屏模式 ↔ 横屏全屏模式。
      * 全屏：锁横屏 + 隐藏系统栏（沉浸式）；竖屏：锁竖屏 + 恢复系统栏。
      */
-    private fun setFullscreen(fullscreen: Boolean) {
+    private fun changeFullscreen(fullscreen: Boolean) {
         if (isFullscreen == fullscreen) return
         isFullscreen = fullscreen
         fullscreenBackCallback.isEnabled = fullscreen
