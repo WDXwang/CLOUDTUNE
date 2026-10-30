@@ -175,6 +175,11 @@ class PlayerControllerManager(
     }
 
     /** 用一批云端文件替换队列并从 [startIndex] 开始播放 */
+    /** 当前正在播放的 CloudFile（解码自 MediaItem URI），无则 null。 */
+    fun currentFile(): CloudFile? = runCatching {
+        controller?.currentMediaItem?.localConfiguration?.uri?.let { CloudMedia.decode(it) }
+    }.getOrNull()
+
     suspend fun playFiles(files: List<CloudFile>, startIndex: Int = 0) {
         val c = awaitController()
         val items = files.map { CloudMedia.mediaItem(it) }

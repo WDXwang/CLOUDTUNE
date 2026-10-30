@@ -14,8 +14,8 @@ android {
         applicationId = "com.cloudtune.player"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.4.0"
+        versionCode = 6
+        versionName = "1.5.0"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -73,10 +73,14 @@ dependencies {
     // 导航
     implementation(libs.androidx.navigation.compose)
 
+    // 投屏（DLNA / UPnP）
+    implementation(libs.androidx.mediarouter)
+
     // 媒体播放（Media3 / ExoPlayer）
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.datasource.okhttp)
+    implementation(libs.androidx.media3.ui)
 
     // 网络
     implementation(libs.okhttp)

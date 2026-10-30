@@ -6,12 +6,21 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- DLNA 投屏：读取 Wi-Fi 状态 / 申请组播锁（SSDP） -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- 读取本地音乐：Android 13+ 用细粒度音频权限，12 及以下用存储权限 -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- 读取本地视频（视频播放） -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- 写入系统铃声目录（仅 API 26-28 需要） -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <!-- 后台播放服务 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -43,6 +52,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 全屏视频播放 Activity（支持画中画） -->
+        <activity
+            android:name=".ui.video.VideoActivity"
+            android:exported="false"
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
+            android:theme="@style/Theme.CloudTune.Base" />
+
+        <!-- 铃声剪辑 Activity -->
+        <activity
+            android:name=".ringtone.RingtoneEditorActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
+            android:theme="@style/Theme.CloudTune.Base" />
 
         <!-- Media3 后台播放服务 -->
         <service

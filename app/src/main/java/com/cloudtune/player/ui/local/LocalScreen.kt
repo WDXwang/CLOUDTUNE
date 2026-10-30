@@ -124,6 +124,7 @@ private fun Body(
     permLauncher: androidx.activity.result.ActivityResultLauncher<String>,
 ) {
     val state = viewModel.uiState
+    val context = androidx.compose.ui.platform.LocalContext.current
     when {
         !hasPermission -> MessageView(
             message = "需要音频读取权限以扫描本地音乐",
@@ -147,6 +148,8 @@ private fun Body(
             onMusicClick = { viewModel.playMusic(it) },
             onLongPressMusic = { viewModel.enterSelection(it) },
             onToggleSelect = { viewModel.toggleSelect(it) },
+            onVideoClick = { com.cloudtune.player.ui.video.VideoActivity.start(context, it) },
+            onRingtoneClick = { com.cloudtune.player.ringtone.RingtoneEditorActivity.start(context, it) },
         )
     }
 }

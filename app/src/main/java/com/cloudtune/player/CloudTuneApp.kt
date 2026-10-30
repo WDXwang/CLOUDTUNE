@@ -74,4 +74,8 @@ class AppContainer(context: Context) {
         // 预加载持久化的均衡器设置
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { it.loadFromStore() }
     }
+
+    /** DLNA 投屏控制器（SSDP 发现 + SOAP 投放 + 本地 HTTP 分享） */
+    val dlnaController: com.cloudtune.player.cast.DlnaController =
+        com.cloudtune.player.cast.DlnaController(appContext, repository)
 }

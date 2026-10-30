@@ -7,12 +7,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -86,6 +89,8 @@ fun SelectAllCheckbox(
  * @param onMusicClick 点击音乐（带该音乐在可见音乐中的下标）
  * @param onLongPressMusic 长按音乐进入多选
  * @param onToggleSelect 多选模式下切换选中
+ * @param onVideoClick 点击视频文件（进入视频播放）
+ * @param onRingtoneClick 点击“制作铃声”
  */
 @Composable
 fun MusicFileList(
@@ -97,6 +102,8 @@ fun MusicFileList(
     onLongPressMusic: (CloudFile) -> Unit,
     onToggleSelect: (CloudFile) -> Unit,
     modifier: Modifier = Modifier,
+    onVideoClick: (CloudFile) -> Unit = {},
+    onRingtoneClick: (CloudFile) -> Unit = {},
 ) {
     LazyColumn(modifier = modifier.fillMaxWidth()) {
         itemsIndexed(files, key = { _, f -> f.id }) { index, file ->
@@ -109,6 +116,18 @@ fun MusicFileList(
                     showCheckbox = false,
                     checked = false,
                     onClick = { onFolderClick(file) },
+                    onLongClick = null,
+                    onCheckboxClick = null,
+                )
+            } else if (file.isVideo()) {
+                ListRow(
+                    icon = Icons.Filled.Movie,
+                    title = MusicUtils.baseName(file.name),
+                    subtitle = MusicUtils.formatSize(file.size),
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    showCheckbox = false,
+                    checked = false,
+                    onClick = { onVideoClick(file) },
                     onLongClick = null,
                     onCheckboxClick = null,
                 )
@@ -127,6 +146,7 @@ fun MusicFileList(
                     },
                     onLongClick = { onLongPressMusic(file) },
                     onCheckboxClick = { onToggleSelect(file) },
+                    trailingAction = if (!selectionMode) ({ onRingtoneClick(file) }) else null,
                 )
             }
         }
@@ -146,6 +166,7 @@ private fun ListRow(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
     onCheckboxClick: (() -> Unit)?,
+    trailingAction: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -164,6 +185,16 @@ private fun ListRow(
             Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (subtitle.isNotEmpty()) {
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (trailingAction != null) {
+            androidx.compose.material3.IconButton(onClick = trailingAction) {
+                Icon(
+                    Icons.Filled.Notifications,
+                    contentDescription = "制作铃声",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }

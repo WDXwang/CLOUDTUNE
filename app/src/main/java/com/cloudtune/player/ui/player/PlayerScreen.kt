@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cloudtune.player.core.util.MusicUtils
+import com.cloudtune.player.ui.components.NovaProgress
 import com.cloudtune.player.ui.navigation.Routes
 import com.cloudtune.player.ui.navigation.ShellBottomBar
 
@@ -143,8 +144,23 @@ fun PlayerScreen(
                     color = SubText,
                 )
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { /* 更多菜单预留 */ }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "更多", tint = MainText)
+                var moreMenu by remember { mutableStateOf(false) }
+                val moreContext = androidx.compose.ui.platform.LocalContext.current
+                Box {
+                    IconButton(onClick = { moreMenu = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "更多", tint = MainText)
+                    }
+                    DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("制作铃声") },
+                            onClick = {
+                                moreMenu = false
+                                vm.currentFile()?.let {
+                                    com.cloudtune.player.ringtone.RingtoneEditorActivity.start(moreContext, it)
+                                }
+                            }
+                        )
+                    }
                 }
             }
 
@@ -288,19 +304,14 @@ fun PlayerScreen(
             Spacer(Modifier.height(8.dp))
 
             // ===== 进度条 + 时间 =====
-            Slider(
-                value = sliderValue,
-                onValueChange = { dragValue = it },
-                onValueChangeFinished = {
-                    dragValue?.let { vm.seekTo((it * durationMs).toLong()) }
+            NovaProgress(
+                progress = sliderValue,
+                onSeek = { dragValue = it },
+                onSeekFinished = { f ->
+                    vm.seekTo((f * durationMs).toLong())
                     dragValue = null
                 },
                 enabled = durationMs > 0L,
-                colors = SliderDefaults.colors(
-                    thumbColor = Accent,
-                    activeTrackColor = Accent,
-                    inactiveTrackColor = NeonBorder,
-                ),
             )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(

@@ -20,10 +20,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.cloudtune.player.ui.components.NovaSwitch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -75,7 +75,7 @@ fun EqualizerScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text("启用均衡器", style = MaterialTheme.typography.titleMedium)
-                Switch(checked = state.enabled, onCheckedChange = { vm.setEnabled(it) })
+                NovaSwitch(checked = state.enabled, onCheckedChange = { vm.setEnabled(it) })
             }
 
             Spacer(Modifier.height(24.dp))

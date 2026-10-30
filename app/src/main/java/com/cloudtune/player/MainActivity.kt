@@ -9,7 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import com.cloudtune.player.ui.navigation.AppNavigation
-import com.cloudtune.player.ui.theme.CloudTuneTheme
+import com.cloudtune.player.ui.theme.NovaTheme
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 /**
@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            CloudTuneTheme {
+            NovaTheme {
                 // Android 13+ 请求通知权限
                 val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestPermission(),

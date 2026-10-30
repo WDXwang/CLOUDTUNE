@@ -90,4 +90,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 点击内嵌播放列表某项跳转播放 */
     fun playQueueItem(index: Int) = playerManager.playQueueItem(index)
+
+    /** 当前正在播放的 CloudFile（用于“制作铃声”等入口） */
+    fun currentFile() = playerManager.currentFile()
 }

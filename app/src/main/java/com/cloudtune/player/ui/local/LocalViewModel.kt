@@ -32,17 +32,22 @@ class LocalViewModel(app: Application) : AndroidViewModel(app) {
             android.Manifest.permission.READ_EXTERNAL_STORAGE
         }
 
-    /** 权限授予后扫描本地音乐。 */
+    /** 权限授予后扫描本地音乐与视频。 */
     fun load() {
         uiState = uiState.copy(loading = true, error = null)
         viewModelScope.launch {
-            runCatching { repository.listLocalMusic() }
-                .onSuccess { files ->
-                    uiState = uiState.copy(loading = false, files = files)
-                }
-                .onFailure {
-                    uiState = uiState.copy(loading = false, error = it.message ?: "扫描失败")
-                }
+            runCatching {
+                // 音乐 + 本地视频合并展示；视频扫描失败（如未授权）返回空列表，不影响音乐
+                val music = repository.listLocalMusic()
+                val videos = com.cloudtune.player.data.local.LocalVideoScanner(getApplication()).scan()
+                (music + videos).sortedWith(
+                    compareByDescending<CloudFile> { it.isVideo() }.thenBy { it.name }
+                )
+            }.onSuccess { files ->
+                uiState = uiState.copy(loading = false, files = files)
+            }.onFailure {
+                uiState = uiState.copy(loading = false, error = it.message ?: "扫描失败")
+            }
         }
     }
 
@@ -71,7 +76,7 @@ class LocalViewModel(app: Application) : AndroidViewModel(app) {
         uiState = uiState.copy(selectionMode = false, selectedIds = emptySet())
     }
 
-    private fun visibleMusic(): List<CloudFile> = uiState.visibleFiles
+    private fun visibleMusic(): List<CloudFile> = uiState.visibleFiles.filter { it.isMusic() }
 
     fun playMusic(index: Int) {
         val music = visibleMusic()

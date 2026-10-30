@@ -64,6 +64,9 @@ data class CloudFile(
 ) {
     /** 是否为可播放的音乐文件（按扩展名判断） */
     fun isMusic(): Boolean = !isDir && com.cloudtune.player.core.util.MusicUtils.isMusicFile(name)
+
+    /** 是否为可播放的视频文件（按扩展名判断） */
+    fun isVideo(): Boolean = !isDir && com.cloudtune.player.core.util.VideoUtils.isVideoFile(name)
 }
 
 /**

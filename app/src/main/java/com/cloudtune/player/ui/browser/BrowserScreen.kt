@@ -121,6 +121,7 @@ fun BrowserScreen(
 @Composable
 private fun MusicListBody(viewModel: BrowserViewModel) {
     val state = viewModel.uiState
+    val context = androidx.compose.ui.platform.LocalContext.current
     when {
         state.loading && state.files.isEmpty() -> LoadingBox()
         state.error != null -> MessageView(
@@ -138,6 +139,7 @@ private fun MusicListBody(viewModel: BrowserViewModel) {
             onMusicClick = { viewModel.playMusic(it) },
             onLongPressMusic = { viewModel.enterSelection(it) },
             onToggleSelect = { viewModel.toggleSelect(it) },
+            onVideoClick = { com.cloudtune.player.ui.video.VideoActivity.start(context, it) },
         )
     }
 }
