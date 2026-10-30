@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.AlertDialog
@@ -62,12 +63,26 @@ fun PlaylistsScreen(
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     var showCreate by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
+    var showGenerateConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("歌单") },
                 actions = {
+                    // 按歌手自动生成歌单：扫描全部网盘音乐，按「歌手 - 歌名」分组
+                    if (vm.generating) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier
+                                .padding(12.dp)
+                                .size(24.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        IconButton(onClick = { showGenerateConfirm = true }) {
+                            Icon(Icons.Filled.AutoAwesome, contentDescription = "按歌手生成歌单")
+                        }
+                    }
                     IconButton(onClick = { showCreate = true }) {
                         Icon(Icons.Filled.Add, contentDescription = "新建歌单")
                     }
@@ -91,6 +106,45 @@ fun PlaylistsScreen(
                 }
             }
         }
+    }
+
+    // 按歌手生成歌单：确认对话框
+    if (showGenerateConfirm) {
+        AlertDialog(
+            onDismissRequest = { showGenerateConfirm = false },
+            title = { Text("按歌手生成歌单") },
+            text = {
+                Text(
+                    "将扫描全部已启用网盘中的音乐文件，按文件名中的「歌手 - 歌名」自动分组建歌单。\n\n" +
+                        "• 同名的已有歌单会被覆盖重建\n" +
+                        "• 文件名不含歌手的歌曲会被跳过\n" +
+                        "• 网盘文件较多时扫描需要一些时间",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showGenerateConfirm = false
+                        vm.generateByArtist()
+                    }
+                ) { Text("开始生成") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGenerateConfirm = false }) { Text("取消") }
+            },
+        )
+    }
+
+    // 生成结果提示
+    vm.generateMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { vm.clearGenerateMessage() },
+            title = { Text("按歌手生成歌单") },
+            text = { Text(msg) },
+            confirmButton = {
+                TextButton(onClick = { vm.clearGenerateMessage() }) { Text("知道了") }
+            },
+        )
     }
 
     if (showCreate) {

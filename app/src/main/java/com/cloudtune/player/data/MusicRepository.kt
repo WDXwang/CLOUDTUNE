@@ -42,6 +42,9 @@ interface MusicRepository {
     /** 在某存储内按文件名递归搜索（有深度 / 目录数上限，避免打爆接口）。 */
     suspend fun search(accountId: String, query: String): List<CloudFile>
 
+    /** 递归扫描某存储内的全部音乐文件（用于按歌手自动生成歌单，有深度 / 目录数 / 条数上限）。 */
+    suspend fun scanMusic(accountId: String): List<CloudFile>
+
     /** 扫描设备本地音乐（需先获得音频权限） */
     suspend fun listLocalMusic(): List<CloudFile>
 

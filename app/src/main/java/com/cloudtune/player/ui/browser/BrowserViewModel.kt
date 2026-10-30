@@ -230,6 +230,11 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
         uiState = uiState.copy(selectionMode = false, selectedIds = emptySet())
     }
 
+    /** 切换「列表 / 电影墙」展示模式（电影墙下视频以海报卡片网格展示） */
+    fun toggleWallMode() {
+        uiState = uiState.copy(wallMode = !uiState.wallMode)
+    }
+
     // ---------- 播放 ----------
 
     /** 当前搜索结果中可见的音乐（保持顺序） */
@@ -280,6 +285,8 @@ data class BrowserUiState(
     val query: String = "",
     val selectionMode: Boolean = false,
     val selectedIds: Set<String> = emptySet(),
+    /** true = 以「电影墙」网格展示（视频海报卡片）；false = 传统列表 */
+    val wallMode: Boolean = false,
 ) {
     /** 顶部显示的路径名 */
     val pathLabel: String
@@ -299,6 +306,9 @@ data class BrowserUiState(
 
     /** 可播放音乐数量（全部，未过滤） */
     val musicCount: Int get() = files.count { it.isMusic() }
+
+    /** 当前目录视频数量（全部，未过滤） */
+    val videoCount: Int get() = files.count { it.isVideo() }
 
     /** 可见音乐数量 */
     val visibleMusicCount: Int get() = visibleFiles.count { it.isMusic() }

@@ -17,9 +17,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -118,6 +120,15 @@ fun BrowserScreen(
                         if (!state.atHome && state.musicCount > 0) {
                             IconButton(onClick = { viewModel.playAll() }) {
                                 Icon(Icons.Filled.PlayArrow, contentDescription = "播放全部")
+                            }
+                        }
+                        // 当前目录有视频时，提供「列表 / 电影墙」切换
+                        if (!state.atHome && state.videoCount > 0) {
+                            IconButton(onClick = { viewModel.toggleWallMode() }) {
+                                Icon(
+                                    if (state.wallMode) Icons.Filled.ViewList else Icons.Filled.GridView,
+                                    contentDescription = if (state.wallMode) "切换为列表" else "切换为电影墙",
+                                )
                             }
                         }
                         if (!state.atHome) {
@@ -247,17 +258,27 @@ private fun MusicListBody(viewModel: BrowserViewModel, showAccountName: Boolean 
                     else -> "此文件夹为空"
                 }
             )
-        else -> MusicFileList(
-            files = state.visibleFiles,
-            selectionMode = state.selectionMode,
-            selectedIds = state.selectedIds,
-            onFolderClick = { viewModel.enterFolder(it) },
-            onMusicClick = { viewModel.playMusic(it) },
-            onLongPressMusic = { viewModel.enterSelection(it) },
-            onToggleSelect = { viewModel.toggleSelect(it) },
-            onVideoClick = { com.cloudtune.player.ui.video.VideoActivity.start(context, it) },
-            onRingtoneClick = { com.cloudtune.player.ringtone.RingtoneEditorActivity.start(context, it) },
-            showAccountName = showAccountName,
-        )
+        else -> if (state.wallMode && !state.atHome && !state.selectionMode) {
+            // 电影墙：视频海报网格（含文件夹 / 音乐紧凑卡片）
+            MediaWallGrid(
+                files = state.visibleFiles,
+                onFolderClick = { viewModel.enterFolder(it) },
+                onVideoClick = { com.cloudtune.player.ui.video.VideoActivity.start(context, it) },
+                onMusicClick = { viewModel.playMusic(it) },
+            )
+        } else {
+            MusicFileList(
+                files = state.visibleFiles,
+                selectionMode = state.selectionMode,
+                selectedIds = state.selectedIds,
+                onFolderClick = { viewModel.enterFolder(it) },
+                onMusicClick = { viewModel.playMusic(it) },
+                onLongPressMusic = { viewModel.enterSelection(it) },
+                onToggleSelect = { viewModel.toggleSelect(it) },
+                onVideoClick = { com.cloudtune.player.ui.video.VideoActivity.start(context, it) },
+                onRingtoneClick = { com.cloudtune.player.ringtone.RingtoneEditorActivity.start(context, it) },
+                showAccountName = showAccountName,
+            )
+        }
     }
 }

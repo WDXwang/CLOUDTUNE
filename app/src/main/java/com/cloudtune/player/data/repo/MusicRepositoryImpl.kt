@@ -137,6 +137,41 @@ class MusicRepositoryImpl(
         return result
     }
 
+    /**
+     * 递归收集某存储内的全部音乐文件（与 [search] 同一套 BFS 上限，
+     * 只是不做名称过滤、条数上限放宽到 [MAX_SCAN_RESULTS]）。
+     * 用于「按歌手自动生成歌单」这类全量扫描场景。
+     */
+    override suspend fun scanMusic(accountId: String): List<CloudFile> {
+        val account = accountById(accountId)
+            ?: throw IllegalStateException("存储不存在或已被删除，请刷新后重试。")
+        val ds = ensureSource(account)
+
+        val result = mutableListOf<CloudFile>()
+        val queue = ArrayDeque<Pair<CloudFile?, Int>>()
+        queue.addLast(null to 0)
+        var visited = 0
+
+        while (queue.isNotEmpty() && visited < MAX_SEARCH_FOLDERS && result.size < MAX_SCAN_RESULTS) {
+            val (dir, depth) = queue.removeFirst()
+            visited++
+            val children = try {
+                ds.list(dir)
+            } catch (_: Exception) {
+                continue
+            }
+            for (child in children) {
+                if (child.isDir) {
+                    if (depth + 1 <= MAX_SEARCH_DEPTH) queue.addLast(child to (depth + 1))
+                } else if (child.isMusic()) {
+                    result += child.copy(accountId = account.id, accountName = account.name)
+                    if (result.size >= MAX_SCAN_RESULTS) break
+                }
+            }
+        }
+        return result
+    }
+
     /** 本地音乐扫描（IO 线程执行）。 */
     override suspend fun listLocalMusic(): List<CloudFile> =
         withContext(Dispatchers.IO) {
@@ -278,5 +313,6 @@ class MusicRepositoryImpl(
         const val MAX_SEARCH_DEPTH = 5
         const val MAX_SEARCH_FOLDERS = 300
         const val MAX_RESULTS = 200
+        const val MAX_SCAN_RESULTS = 2000
     }
 }
