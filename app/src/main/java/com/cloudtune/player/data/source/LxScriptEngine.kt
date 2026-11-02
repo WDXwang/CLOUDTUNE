@@ -79,7 +79,7 @@ class LxScriptEngine {
             val ctx = ContextFactory().enterContext()
             try {
                 ctx.optimizationLevel = -1
-                ctx.setClassShutter(ClassShutter { false })
+                ctx.setClassShutter(ALLOW_BRIDGE_ONLY)
                 val scope = ctx.initStandardObjects()
                 ScriptableObject.putProperty(scope, "__bridge", RhinoContext.javaToJS(bridge, scope))
                 ctx.evaluateString(scope, PRELUDE, "lx-prelude.js", 1, null)
@@ -111,8 +111,8 @@ class LxScriptEngine {
         val ctx = ContextFactory().enterContext()
         try {
             ctx.optimizationLevel = -1
-            // 禁止脚本访问任意 Java 类，降低第三方脚本的风险
-            ctx.setClassShutter(ClassShutter { false })
+            // 只放行 LxBridge（JS 侧 __bridge），其余 Java 类一律禁止访问
+            ctx.setClassShutter(ALLOW_BRIDGE_ONLY)
             val scope = ctx.initStandardObjects()
             ScriptableObject.putProperty(scope, "__bridge", RhinoContext.javaToJS(bridge, scope))
             ctx.evaluateString(scope, PRELUDE, "lx-prelude.js", 1, null)
@@ -215,6 +215,14 @@ class LxScriptEngine {
     }
 
     private companion object {
+
+        /**
+         * 白名单 ClassShutter：只允许 JS 侧的 `__bridge`（即 LxBridge），
+         * 第三方脚本无法通过 `Java.type(...)` 访问其他任何 Java 类。
+         */
+        val ALLOW_BRIDGE_ONLY = ClassShutter { className ->
+            className == LxBridge::class.java.name
+        }
         /** 洛雪自定义源协议的最小兼容层（含 Promise / globalThis / lx.request 同步桥）。 */
         val PRELUDE = """
             var globalThis = this;
