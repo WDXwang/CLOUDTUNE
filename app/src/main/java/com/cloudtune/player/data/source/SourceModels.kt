@@ -16,8 +16,19 @@ data class MusicSourceInfo(
     val version: String = "",
     val sources: List<String> = emptyList(),
     val actions: List<String> = emptyList(),
+    /** 每个源单独声明的能力（sourceKey → actions），用于按能力挑选要调用的源 */
+    val sourceActions: Map<String, List<String>> = emptyMap(),
     val importedAt: Long = 0L,
-)
+) {
+    /** 脚本是否声明了某个 action 能力（未声明任何能力时视为未知，返回 true） */
+    fun supports(action: String): Boolean =
+        actions.isEmpty() || actions.contains(action)
+
+    /** 挑选声明了该能力的源；没有则退回第一个源 */
+    fun sourceFor(action: String): String =
+        sourceActions.entries.firstOrNull { action in it.value }?.key
+            ?: sources.firstOrNull().orEmpty()
+}
 
 /** 第三方源返回的一首歌曲（榜单 / 搜索通用）。 */
 @Serializable

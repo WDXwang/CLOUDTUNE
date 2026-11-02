@@ -159,6 +159,10 @@ fun SourcesScreen(
                 songs = vm.songs,
                 loading = vm.loading,
                 loadingSongId = vm.loadingSongId,
+                searchQuery = vm.searchQuery,
+                searching = vm.searching,
+                onSearchQuery = { vm.searchQuery = it },
+                onSearch = { vm.search() },
                 onRefresh = { vm.loadLeaderboard() },
                 onBoard = { vm.loadSongs(it) },
                 onPlay = { song ->
@@ -217,7 +221,7 @@ private fun IntroCard() {
             Spacer(Modifier.height(6.dp))
             Text(
                 text = "兼容洛雪音乐自定义源（globalThis.lx）。导入网友分享的 .js 脚本后，" +
-                    "可直接播放第三方音乐，并读取脚本提供的排行榜（扩展 action：leaderboard）。",
+                    "可在音源详情中搜索歌曲并直接播放；脚本提供 leaderboard 时还能读取排行榜。",
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.sub,
             )
@@ -292,6 +296,10 @@ private fun SourceDetail(
     songs: List<SourceSong>,
     loading: Boolean,
     loadingSongId: String?,
+    searchQuery: String,
+    searching: Boolean,
+    onSearchQuery: (String) -> Unit,
+    onSearch: () -> Unit,
     onRefresh: () -> Unit,
     onBoard: (SourceBoard) -> Unit,
     onPlay: (SourceSong) -> Unit,
@@ -313,10 +321,39 @@ private fun SourceDetail(
                     color = colors.sub,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onRefresh) {
+                TextButton(onClick = onRefresh, enabled = !loading) {
                     Icon(Icons.Filled.Refresh, contentDescription = null, tint = colors.accent, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("刷新榜单", color = colors.accent)
+                }
+            }
+        }
+
+        // 搜索入口：脚本提供 musicSearch / search 时可用
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQuery,
+                    placeholder = { Text("搜索歌曲 / 歌手…") },
+                    singleLine = true,
+                    enabled = !searching,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                TextButton(onClick = onSearch, enabled = !searching) {
+                    if (searching) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = colors.accent,
+                        )
+                    } else {
+                        Text("搜索", color = colors.accent)
+                    }
                 }
             }
         }
@@ -371,8 +408,8 @@ private fun SourceDetail(
         if (!loading && songs.isEmpty()) {
             item {
                 Text(
-                    text = "暂无歌曲。若音源脚本未实现 leaderboard，请尝试其他音源，" +
-                        "或直接通过「乐库」播放网盘 / 本地音乐。",
+                    text = "暂无歌曲。可先在下方搜索歌曲；若音源脚本未实现 leaderboard，" +
+                        "则不会返回榜单，请尝试其他音源。",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.sub,
                     modifier = Modifier.padding(vertical = 20.dp),

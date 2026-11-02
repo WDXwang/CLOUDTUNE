@@ -63,6 +63,7 @@ class SourceRepository(context: Context) {
                 version = meta.version,
                 sources = meta.sources,
                 actions = meta.actions,
+                sourceActions = meta.sourceActions,
             ),
         ).also { _sources.value = store.list() }
     }
@@ -83,6 +84,24 @@ class SourceRepository(context: Context) {
             append("}")
         }
         val raw = engine.call(script, ACTION_LEADERBOARD, sourceKey, infoJson).getOrThrow()
+        parsePayload(raw)
+    }
+
+    /** 用音源脚本搜索歌曲（洛雪扩展 action：`musicSearch` / `search`）。 */
+    suspend fun search(info: MusicSourceInfo, keyword: String): Result<SourcePayload> = runCatching {
+        val script = store.script(info.id) ?: error("音源脚本文件不存在，请重新导入")
+        val action = when {
+            info.supports(ACTION_MUSIC_SEARCH) -> ACTION_MUSIC_SEARCH
+            info.supports(ACTION_SEARCH) -> ACTION_SEARCH
+            else -> error("该音源未提供搜索接口（仅支持解析播放地址），无法搜索歌曲")
+        }
+        val sourceKey = info.sourceFor(action)
+        val infoJson = buildString {
+            append("{\"keyword\":").append(quoted(keyword))
+            append(",\"text\":").append(quoted(keyword))
+            append(",\"page\":1,\"limit\":30}")
+        }
+        val raw = engine.call(script, action, sourceKey, infoJson).getOrThrow()
         parsePayload(raw)
     }
 
@@ -132,7 +151,12 @@ class SourceRepository(context: Context) {
                 val boards = boardArr?.mapNotNull { (it as? JsonObject)?.let(::parseBoard) }.orEmpty()
                 val songs = songArr?.mapNotNull { (it as? JsonObject)?.let(::parseSong) }.orEmpty()
                 if (boards.isEmpty() && songs.isEmpty()) {
-                    parseSong(root)?.let { SourcePayload(songs = listOf(it)) } ?: SourcePayload()
+                    // 兼容 { result: { list: [...] } } / { data: { ... } } 这类一层包裹
+                    val nested = listOf("result", "data").firstNotNullOfOrNull { key ->
+                        root[key] as? JsonObject
+                    }
+                    if (nested != null) parsePayload(nested.toString())
+                    else parseSong(root)?.let { SourcePayload(songs = listOf(it)) } ?: SourcePayload()
                 } else {
                     SourcePayload(boards, songs)
                 }
@@ -216,5 +240,7 @@ class SourceRepository(context: Context) {
     private companion object {
         const val ACTION_LEADERBOARD = "leaderboard"
         const val ACTION_MUSIC_URL = "musicUrl"
+        const val ACTION_MUSIC_SEARCH = "musicSearch"
+        const val ACTION_SEARCH = "search"
     }
 }

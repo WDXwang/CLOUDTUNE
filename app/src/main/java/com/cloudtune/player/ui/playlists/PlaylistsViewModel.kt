@@ -141,7 +141,10 @@ class PlaylistsViewModel(app: Application) : AndroidViewModel(app) {
         pickerLoading = true
         viewModelScope.launch {
             val folders = runCatching {
-                repository.list(accountId, dir).filter { it.isDir }.sortedBy { it.name }
+                repository.list(accountId, dir)
+                    .filter { it.isDir }
+                    .distinctBy { it.id }
+                    .sortedBy { it.name }
             }.getOrDefault(emptyList())
             currentFolders = folders
             pickerLoading = false
@@ -151,7 +154,7 @@ class PlaylistsViewModel(app: Application) : AndroidViewModel(app) {
     /** 勾选 / 取消勾选当前目录下的某个文件夹 */
     fun toggleFolder(folder: CloudFile) {
         val accountId = browseAccountId ?: return
-        val key = folderKey(accountId, folder.path)
+        val key = folderKey(accountId, folder.id)
         if (selectedFolders.containsKey(key)) {
             selectedFolders.remove(key)
         } else {
@@ -166,7 +169,8 @@ class PlaylistsViewModel(app: Application) : AndroidViewModel(app) {
         currentFolders = currentFolders.toList()
     }
 
-    private fun folderKey(accountId: String, path: String) = "$accountId\n$path"
+    /** 选中项唯一键：用文件 id（WebDAV 下同一目录里各子项的 path 相同，不能做键）。 */
+    private fun folderKey(accountId: String, fileId: String) = "$accountId\n$fileId"
 
     /** 确认选择并生成歌单。folderRefs 为空时扫描全部已启用网盘。 */
     fun generateByArtist(folderRefs: List<FolderRef>) {

@@ -34,6 +34,7 @@ data class ScriptMeta(
     val version: String,
     val sources: List<String>,
     val actions: List<String>,
+    val sourceActions: Map<String, List<String>> = emptyMap(),
 )
 
 /**
@@ -273,10 +274,12 @@ class LxScriptEngine {
         val author = header["author"].orEmpty().ifBlank { legacy?.str("author").orEmpty() }
         val version = header["version"].orEmpty().ifBlank { legacy?.str("version").orEmpty() }
 
-        val actions = sources.values
-            .mapNotNull { (it as? JsonObject)?.get("actions") as? JsonArray }
-            .flatMap { arr -> arr.mapNotNull { it.jsonPrimitive.contentOrNull } }
-            .distinct()
+        val perSourceActions = sources.entries.associate { (key, value) ->
+            key to ((value as? JsonObject)?.get("actions") as? JsonArray)
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                .orEmpty()
+        }
+        val actions = perSourceActions.values.flatten().distinct()
 
         return ScriptMeta(
             name = name,
@@ -284,6 +287,7 @@ class LxScriptEngine {
             version = version,
             sources = sources.keys.toList(),
             actions = actions,
+            sourceActions = perSourceActions,
         )
     }
 

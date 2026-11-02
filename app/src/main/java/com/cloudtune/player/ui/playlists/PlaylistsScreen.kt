@@ -263,8 +263,8 @@ private fun FolderPickerDialog(
                     Text("该目录下没有子文件夹", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
-                        items(vm.currentFolders, key = { it.path }) { folder ->
-                            val key = "${folder.accountId ?: browseAccountId}\n${folder.path}"
+                        items(vm.currentFolders, key = { it.id }) { folder ->
+                            val key = "${folder.accountId ?: browseAccountId}\n${folder.id}"
                             val checked = vm.selectedFolders.containsKey(key)
                             Row(
                                 modifier = Modifier

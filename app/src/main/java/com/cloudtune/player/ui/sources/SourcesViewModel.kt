@@ -47,6 +47,11 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
     var loading by mutableStateOf(false)
         private set
 
+    /** 搜索关键词与搜索状态 */
+    var searchQuery by mutableStateOf("")
+    var searching by mutableStateOf(false)
+        private set
+
     /** 正在解析播放地址的歌曲 id */
     var loadingSongId by mutableStateOf<String?>(null)
         private set
@@ -129,6 +134,7 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
         selected = info
         boards = emptyList()
         songs = emptyList()
+        searchQuery = ""
         message = null
         loadLeaderboard()
     }
@@ -137,13 +143,43 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
         selected = null
         boards = emptyList()
         songs = emptyList()
+        searchQuery = ""
         message = null
+    }
+
+    /** 用当前音源搜索歌曲（脚本需提供 musicSearch / search action）。 */
+    fun search() {
+        val info = selected ?: return
+        val keyword = searchQuery.trim()
+        if (keyword.isBlank()) {
+            message = "请输入搜索关键词"
+            return
+        }
+        if (searching) return
+        searching = true
+        message = null
+        viewModelScope.launch {
+            repository.search(info, keyword)
+                .onSuccess { payload ->
+                    songs = payload.songs.ifEmpty { payload.boards.flatMap { it.songs } }
+                    if (songs.isEmpty()) message = "没有搜到与「$keyword」相关的歌曲"
+                }
+                .onFailure { message = "搜索失败：${it.message ?: "未知错误"}" }
+            searching = false
+        }
     }
 
     /** 拉取榜单目录（脚本返回 boards 或直接返回歌曲）。 */
     fun loadLeaderboard() {
         val info = selected ?: return
         if (loading) return
+        // 脚本已声明能力但不含 leaderboard 时直接提示，避免无谓等待
+        if (info.actions.isNotEmpty() && "leaderboard" !in info.actions) {
+            boards = emptyList()
+            songs = emptyList()
+            message = "该音源未提供排行榜，可改用下方「搜索」找歌后直接播放"
+            return
+        }
         loading = true
         message = null
         viewModelScope.launch {

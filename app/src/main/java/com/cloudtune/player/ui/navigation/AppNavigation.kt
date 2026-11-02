@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
@@ -100,7 +101,7 @@ fun AppNavigation() {
     // 当前路由，用于决定是否显示底部导航
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = currentRoute in setOf(Routes.BROWSER, Routes.MINE)
+    val showBottomBar = currentRoute in setOf(Routes.BROWSER, Routes.MINE, Routes.SOURCES)
 
     Scaffold(
         bottomBar = {
@@ -281,7 +282,7 @@ fun AppNavigation() {
     }
 }
 
-/** 底部导航栏（汽水音乐风格：首页 / 乐库 / 我的 三个主入口） */
+/** 底部导航栏（汽水音乐风格：首页 / 乐库 / 音源 / 我的 四个主入口） */
 @Composable
 fun ShellBottomBar(
     currentRoute: String?,
@@ -290,6 +291,7 @@ fun ShellBottomBar(
     val items = listOf(
         Triple(Routes.PLAYER, "首页", Icons.Filled.Home),
         Triple(Routes.BROWSER, "乐库", Icons.Filled.LibraryMusic),
+        Triple(Routes.SOURCES, "音源", Icons.Filled.Extension),
         Triple(Routes.MINE, "我的", Icons.Filled.Person),
     )
     NavigationBar(
