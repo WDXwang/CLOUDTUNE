@@ -39,8 +39,8 @@ android {
         applicationId = "com.cloudtune.player"
         minSdk = 26
         targetSdk = 34
-        versionCode = 15
-        versionName = "1.8.3"
+        versionCode = 16
+        versionName = "1.8.4"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -144,6 +144,6 @@ dependencies {
     // 二维码生成（扫码登录）
     implementation("com.google.zxing:core:3.5.3")
 
-    // 第三方音源脚本执行（兼容洛雪音乐自定义源协议）
-    implementation("org.mozilla:rhino:1.7.15")
+    // 第三方音源脚本执行（兼容洛雪音乐自定义源协议，QuickJS 支持 ES2020 / async）
+    implementation("io.github.dokar3:quickjs-kt:1.0.0-alpha13")
 }
