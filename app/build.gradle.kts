@@ -6,6 +6,29 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// ---------------------------------------------------------------------------
+// 固定签名：密钥库不入库，通过环境变量（CI）或 local.properties（本机）提供。
+//   CLOUDTUNE_STORE_FILE / CLOUDTUNE_STORE_PASSWORD /
+//   CLOUDTUNE_KEY_ALIAS  / CLOUDTUNE_KEY_PASSWORD
+//   local.properties 中对应 cloudtune.storeFile 等键。
+// 找不到密钥库时回落到默认 debug 签名，保证仍可编译。
+// ---------------------------------------------------------------------------
+val signingProps = java.util.Properties()
+rootProject.file("local.properties")
+    .takeIf { it.exists() }
+    ?.reader(Charsets.UTF_8)
+    ?.use { signingProps.load(it) }
+
+fun signValue(envKey: String, propKey: String): String? =
+    System.getenv(envKey)?.takeIf { it.isNotBlank() }
+        ?: signingProps.getProperty(propKey)?.takeIf { it.isNotBlank() }
+
+val signStorePath = signValue("CLOUDTUNE_STORE_FILE", "cloudtune.storeFile")
+val signStoreFile = signStorePath?.let { rootProject.file(it) }?.takeIf { it.exists() }
+val signStorePassword = signValue("CLOUDTUNE_STORE_PASSWORD", "cloudtune.storePassword")
+val signKeyAlias = signValue("CLOUDTUNE_KEY_ALIAS", "cloudtune.keyAlias") ?: "cloudtune"
+val signKeyPassword = signValue("CLOUDTUNE_KEY_PASSWORD", "cloudtune.keyPassword") ?: signStorePassword
+
 android {
     namespace = "com.cloudtune.player"
     compileSdk = 34
@@ -14,9 +37,21 @@ android {
         applicationId = "com.cloudtune.player"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.8.0"
+        versionCode = 13
+        versionName = "1.8.1"
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    signingConfigs {
+        // 固定签名：debug / release 都使用同一把密钥，保证每次安装的签名一致
+        if (signStoreFile != null) {
+            create("stable") {
+                storeFile = signStoreFile
+                storePassword = signStorePassword
+                keyAlias = signKeyAlias
+                keyPassword = signKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -27,9 +62,15 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (signStoreFile != null) {
+                signingConfig = signingConfigs.getByName("stable")
+            }
         }
         debug {
             isMinifyEnabled = false
+            if (signStoreFile != null) {
+                signingConfig = signingConfigs.getByName("stable")
+            }
         }
     }
 

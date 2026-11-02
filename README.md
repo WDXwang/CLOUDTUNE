@@ -90,8 +90,26 @@
 ```bash
 cd CloudTune
 ./gradlew assembleDebug          # 产物：app/build/outputs/apk/debug/app-debug.apk
-./gradlew assembleRelease        # Release 包（需自行签名）
+./gradlew assembleRelease        # Release 包（与 debug 使用同一把固定密钥）
 ```
+
+### 固定签名（升级不再换签名）
+项目把 debug / release 都指向同一把密钥，因此 CI 产物与本机产物签名一致，可直接覆盖安装。
+
+- 密钥库**不进入仓库**，本机放在任意位置（默认 `../cloudtune-keystore/cloudtune.jks`），然后在项目根目录的 `local.properties`（该文件不会上传）写入：
+
+```properties
+cloudtune.storeFile=E:/桌面/项目采购情况/cloudtune-keystore/cloudtune.jks
+cloudtune.storePassword=********
+cloudtune.keyAlias=cloudtune
+cloudtune.keyPassword=********
+```
+
+- CI 通过仓库 Actions Secrets 注入同名配置：`CLOUDTUNE_KEYSTORE_B64`（jks 的 Base64 文本）、`CLOUDTUNE_STORE_PASSWORD`、`CLOUDTUNE_KEY_ALIAS`、`CLOUDTUNE_KEY_PASSWORD`；Workflow 会写入临时 `local.properties`，并用 `apksigner verify --print-certs` 校验。
+- 也可以在构建前直接设置环境变量 `CLOUDTUNE_STORE_FILE` / `CLOUDTUNE_STORE_PASSWORD` / `CLOUDTUNE_KEY_ALIAS` / `CLOUDTUNE_KEY_PASSWORD`。
+- 找不到密钥库时会自动回落到默认 debug 签名（仅用于临时调试，签名不固定）。
+- 当前固定证书 SHA-256：`C7:6F:50:F9:E1:3B:F3:36:B4:5B:61:7B:0C:99:59:6D:6C:AA:B1:F7:41:96:3C:44:8B:B6:B9:1C:04:B4:96:ED`
+- 由于 v1.8.1 之前的版本使用 CI 临时 debug 签名，**首次安装 v1.8.1 需先卸载旧版本**，之后再升级即可直接覆盖。
 
 > 中国大陆网络下，项目已在 `settings.gradle.kts` 配置阿里云镜像、Gradle 发行版使用腾讯镜像。
 
