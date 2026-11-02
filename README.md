@@ -109,6 +109,9 @@ cloudtune.keyPassword=********
 - 也可以在构建前直接设置环境变量 `CLOUDTUNE_STORE_FILE` / `CLOUDTUNE_STORE_PASSWORD` / `CLOUDTUNE_KEY_ALIAS` / `CLOUDTUNE_KEY_PASSWORD`。
 - 找不到密钥库时会自动回落到默认 debug 签名（仅用于临时调试，签名不固定）。
 - 当前固定证书 SHA-256：`C7:6F:50:F9:E1:3B:F3:36:B4:5B:61:7B:0C:99:59:6D:6C:AA:B1:F7:41:96:3C:44:8B:B6:B9:1C:04:B4:96:ED`
+- **Android Studio 里构建**：Gradle JDK 必须选 17。Studio 自带的 JBR 25 与项目固定的 Gradle 8.9 不兼容，会直接报错；本机已放了一份 JDK 17 在 `C:\Users\Administrator\.jdks\openjdk-17.0.2`，在 `Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK` 中选中它再 Sync。
+- 项目路径含中文时，`gradle.properties` 已开启 `android.overridePathCheck=true`，否则 AGP 会拒绝构建（Windows 中文目录常见）。
+- 已用 `apksigner verify --print-certs` 核对：CI 产物与本机 `assembleDebug` 产物证书完全一致（SHA-256 相同）。
 - 由于 v1.8.1 之前的版本使用 CI 临时 debug 签名，**首次安装 v1.8.1 需先卸载旧版本**，之后再升级即可直接覆盖。
 
 > 中国大陆网络下，项目已在 `settings.gradle.kts` 配置阿里云镜像、Gradle 发行版使用腾讯镜像。
