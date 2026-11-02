@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -13,7 +15,7 @@ plugins {
 //   local.properties 中对应 cloudtune.storeFile 等键。
 // 找不到密钥库时回落到默认 debug 签名，保证仍可编译。
 // ---------------------------------------------------------------------------
-val signingProps = java.util.Properties()
+val signingProps = Properties()
 rootProject.file("local.properties")
     .takeIf { it.exists() }
     ?.reader(Charsets.UTF_8)
