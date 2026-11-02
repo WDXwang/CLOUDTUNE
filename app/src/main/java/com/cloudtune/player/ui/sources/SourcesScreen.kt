@@ -28,10 +28,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,6 +67,8 @@ fun SourcesScreen(
 ) {
     val colors = NovaTheme.colors
     val sources by vm.sources.collectAsStateWithLifecycle()
+    var showUrlImport by remember { mutableStateOf(false) }
+    var urlText by remember { mutableStateOf("") }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { vm.import(it) }
     }
@@ -97,7 +101,10 @@ fun SourcesScreen(
                 TextButton(onClick = { launcher.launch("*/*") }) {
                     Icon(Icons.Filled.Add, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("导入", color = colors.accent)
+                    Text("文件", color = colors.accent)
+                }
+                TextButton(onClick = { showUrlImport = true }) {
+                    Text("链接", color = colors.accent)
                 }
             }
         }
@@ -161,6 +168,39 @@ fun SourcesScreen(
                 modifier = Modifier.weight(1f),
             )
         }
+    }
+
+    // 网络地址导入弹窗
+    if (showUrlImport) {
+        AlertDialog(
+            onDismissRequest = { showUrlImport = false },
+            title = { Text("从网络地址导入音源") },
+            text = {
+                OutlinedTextField(
+                    value = urlText,
+                    onValueChange = { urlText = it },
+                    label = { Text("音源脚本 URL（.js 直链）") },
+                    placeholder = { Text("https://.../source.js") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val u = urlText.trim()
+                        if (u.isNotEmpty()) {
+                            vm.importUrl(u)
+                            urlText = ""
+                            showUrlImport = false
+                        }
+                    }
+                ) { Text("导入") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUrlImport = false }) { Text("取消") }
+            },
+        )
     }
 }
 

@@ -142,14 +142,23 @@ class MusicRepositoryImpl(
      * 只是不做名称过滤、条数上限放宽到 [MAX_SCAN_RESULTS]）。
      * 用于「按歌手自动生成歌单」这类全量扫描场景。
      */
-    override suspend fun scanMusic(accountId: String): List<CloudFile> {
+    override suspend fun scanMusic(accountId: String): List<CloudFile> =
+        scanMusicIn(accountId, emptyList())
+
+    /**
+     * 仅从指定根文件夹 [roots] 开始递归扫描音乐（BFS）。
+     * roots 为空时从存储根目录扫描，行为同 [scanMusic]。
+     * 深度 / 目录数 / 结果数上限与 [scanMusic] 一致，单个目录失败不阻塞整体。
+     */
+    override suspend fun scanMusicIn(accountId: String, roots: List<CloudFile>): List<CloudFile> {
         val account = accountById(accountId)
             ?: throw IllegalStateException("存储不存在或已被删除，请刷新后重试。")
         val ds = ensureSource(account)
 
+        val startRoots = if (roots.isEmpty()) listOf(null) else roots.map { it }
         val result = mutableListOf<CloudFile>()
         val queue = ArrayDeque<Pair<CloudFile?, Int>>()
-        queue.addLast(null to 0)
+        startRoots.forEach { queue.addLast(it to 0) }
         var visited = 0
 
         while (queue.isNotEmpty() && visited < MAX_SEARCH_FOLDERS && result.size < MAX_SCAN_RESULTS) {

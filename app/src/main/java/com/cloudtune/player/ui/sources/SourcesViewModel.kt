@@ -80,6 +80,38 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 从网络地址下载 .js 脚本并导入。 */
+    fun importUrl(url: String) {
+        if (importing) return
+        val trimmed = url.trim()
+        if (trimmed.isBlank()) {
+            message = "请输入音源脚本的网络地址"
+            return
+        }
+        importing = true
+        viewModelScope.launch {
+            val text: String? = withContext(Dispatchers.IO) {
+                runCatching {
+                    val conn = java.net.URL(trimmed).openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 20000
+                    conn.setRequestProperty("User-Agent", "CloudTune/1.8")
+                    conn.setRequestProperty("Accept", "*/*")
+                    conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                }.getOrNull()
+            }
+            if (text.isNullOrBlank()) {
+                message = "下载脚本失败，请检查地址是否正确、网络是否可访问"
+                importing = false
+                return@launch
+            }
+            repository.import(text.removePrefix("\uFEFF"))
+                .onSuccess { message = "已导入音源「${it.name}」" }
+                .onFailure { message = "导入失败：${it.message ?: "未知错误"}" }
+            importing = false
+        }
+    }
+
     fun delete(info: MusicSourceInfo) {
         viewModelScope.launch {
             if (selected?.id == info.id) {
