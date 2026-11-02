@@ -47,36 +47,37 @@ data class NovaPalette(
 
 val LightNovaPalette = NovaPalette(
     isDark = false,
-    bg = Color(0xFFEDF0F5),
+    bg = Color(0xFFF6F7F8),
     surface = Color(0xFFFFFFFF),
-    surface2 = Color(0xFFF5F7FB),
-    text = Color(0xFF14161B),
-    sub = Color(0xFF6B7480),
-    line = Color(0x17111827),          // rgba(17,24,39,.09)
-    lineStrong = Color(0x2E111827),    // rgba(17,24,39,.18)
-    accent = Color(0xFF2C6FF6),
-    accentSoft = Color(0x1A2C6FF6),    // 10%
-    accent2 = Color(0xFF6E5BE8),
-    accent3 = Color(0xFF22B79A),
-    onAccent = Color(0xFFFFFFFF),
+    surface2 = Color(0xFFF0F2F4),
+    text = Color(0xFF0E0E10),
+    sub = Color(0xFF6E7379),
+    line = Color(0x14141418),
+    lineStrong = Color(0x2B141418),
+    accent = Color(0xFF9BD400),
+    accentSoft = Color(0x1F9BD400),
+    accent2 = Color(0xFF1DBFA0),
+    accent3 = Color(0xFF2C6FF6),
+    onAccent = Color(0xFF0E0E10),
     warn = Color(0xFFD98A1F)
 )
 
+// 汽水音乐风格：纯黑底 + 柠檬绿强调色 + 大圆角深灰卡片
 val DarkNovaPalette = NovaPalette(
     isDark = true,
-    bg = Color(0xFF0A0C11),
-    surface = Color(0xFF15181F),
-    surface2 = Color(0xFF1C2029),
-    text = Color(0xFFF2F4F7),
-    sub = Color(0xFF9AA3B2),
-    line = Color(0x14FFFFFF),          // rgba(255,255,255,.08)
-    lineStrong = Color(0x33FFFFFF),    // rgba(255,255,255,.20)
-    accent = Color(0xFF5B93FF),
-    accentSoft = Color(0x295B93FF),    // 16%
-    accent2 = Color(0xFFA78BFA),
-    accent3 = Color(0xFF4FD6B8),
-    onAccent = Color(0xFF0A0C11),
-    warn = Color(0xFFF0B457)
+    bg = Color(0xFF000000),
+    surface = Color(0xFF141416),
+    surface2 = Color(0xFF1F1F22),
+    text = Color(0xFFFFFFFF),
+    sub = Color(0xFF9A9AA0),
+    line = Color(0x14FFFFFF),
+    lineStrong = Color(0x2EFFFFFF),
+    accent = Color(0xFFD3FF4E),
+    accentSoft = Color(0x1FD3FF4E),
+    accent2 = Color(0xFF6BE2C4),
+    accent3 = Color(0xFFA78BFA),
+    onAccent = Color(0xFF0E0E10),
+    warn = Color(0xFFFFB84D)
 )
 
 private val LocalNovaPalette = staticCompositionLocalOf { LightNovaPalette }
@@ -227,10 +228,10 @@ private val NovaTypography = Typography(
 
 private val NovaShapes = Shapes(
     extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-    small = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-    medium = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
-    large = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
-    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
+    small = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+    medium = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+    large = androidx.compose.foundation.shape.RoundedCornerShape(30.dp),
+    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(36.dp)
 )
 
 /**

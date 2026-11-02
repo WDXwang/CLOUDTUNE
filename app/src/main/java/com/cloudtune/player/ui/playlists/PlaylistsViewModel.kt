@@ -77,11 +77,17 @@ class PlaylistsViewModel(app: Application) : AndroidViewModel(app) {
                     generateMessage = "没有扫描到任何音乐文件"
                     return@launch
                 }
-                // 按歌手分组；文件名不符合「歌手 - 歌名」的跳过
+                // 按歌手分组：优先用文件名解析；文件名不含歌手时用所在目录兜底
                 val byArtist = LinkedHashMap<String, MutableList<com.cloudtune.player.core.model.CloudFile>>()
                 var skipped = 0
+                var byFolder = 0
                 for (f in all) {
-                    val artist = com.cloudtune.player.core.util.MusicUtils.parseArtist(f.name)
+                    var artist = com.cloudtune.player.core.util.MusicUtils.parseArtist(f.name)
+                    if (artist == null) {
+                        // 文件名没有「歌手 - 歌名」时，按最末级所在文件夹名归类
+                        artist = com.cloudtune.player.core.util.MusicUtils.folderArtist(f.name, f.path)
+                        if (artist != null) byFolder++
+                    }
                     if (artist == null) {
                         skipped++
                     } else {
@@ -90,7 +96,7 @@ class PlaylistsViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 if (byArtist.isEmpty()) {
                     generateMessage =
-                        "共扫描到 ${all.size} 首音乐，但文件名都不含「歌手 - 歌名」，无法识别歌手"
+                        "共扫描到 ${all.size} 首音乐，但文件名和所在文件夹都无法识别歌手"
                     return@launch
                 }
                 // 同名歌单先删除再重建，保证重复执行时内容是最新的
@@ -114,8 +120,9 @@ class PlaylistsViewModel(app: Application) : AndroidViewModel(app) {
                     trackCount += files.size
                 }
                 generateMessage = buildString {
-                    append("已生成 $playlistCount 个歌手歌单，共 $trackCount 首")
-                    if (skipped > 0) append("；$skipped 首文件名不含歌手，已跳过")
+                    append("共扫描 ${all.size} 首音乐，已生成 $playlistCount 个歌手歌单，共 $trackCount 首")
+                    if (byFolder > 0) append("；其中 $byFolder 首按所在文件夹归类")
+                    if (skipped > 0) append("；$skipped 首无法识别歌手，已跳过")
                 }
             } catch (e: Exception) {
                 generateMessage = "生成失败：${e.message ?: "未知错误"}"

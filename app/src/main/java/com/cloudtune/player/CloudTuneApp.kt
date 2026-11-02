@@ -62,6 +62,10 @@ class AppContainer(context: Context) {
         playlistDao = database.playlistDao(),
     )
 
+    /** 第三方音源仓库（洛雪自定义源脚本：导入 / 榜单 / 播放地址） */
+    val sourceRepository: com.cloudtune.player.data.source.SourceRepository =
+        com.cloudtune.player.data.source.SourceRepository(appContext)
+
     /** 音量增益控制器（绑定音频会话，实现超过 100% 音量） */
     val volumeBoost = VolumeBoostController()
 

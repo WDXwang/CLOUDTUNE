@@ -310,9 +310,9 @@ class MusicRepositoryImpl(
             }
 
     private companion object {
-        const val MAX_SEARCH_DEPTH = 5
-        const val MAX_SEARCH_FOLDERS = 300
-        const val MAX_RESULTS = 200
-        const val MAX_SCAN_RESULTS = 2000
+        const val MAX_SEARCH_DEPTH = 12
+        const val MAX_SEARCH_FOLDERS = 3000
+        const val MAX_RESULTS = 300
+        const val MAX_SCAN_RESULTS = 5000
     }
 }

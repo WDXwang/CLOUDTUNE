@@ -1,5 +1,7 @@
 package com.cloudtune.player.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
@@ -28,12 +32,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cloudtune.player.CloudTuneApp
 import com.cloudtune.player.player.PlayerControllerManager
+import com.cloudtune.player.ui.theme.NovaTheme
 
 /** 全屏居中加载圈 */
 @Composable
@@ -91,34 +99,48 @@ fun MiniPlayer(
     val player: PlayerControllerManager = container.playerManager
     val nowPlaying by player.nowPlaying.collectAsStateWithLifecycle()
 
-    // 无有效曲目时不渲染
+    // 无有效曲目时不占用空间
     if (nowPlaying.mediaId.isNullOrBlank()) return
 
+    val colors = NovaTheme.colors
+
     Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        tonalElevation = 3.dp,
-        onClick = onOpenPlayer,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(onClick = onOpenPlayer),
+        color = colors.surface2,
+        shape = RoundedCornerShape(24.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
-                .padding(horizontal = 12.dp),
+                .height(64.dp)
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = Icons.Filled.MusicNote,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
+            // 迷你封面（柠檬绿渐变，替代无封面资源）
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Brush.linearGradient(listOf(colors.accent2, colors.accent))),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.MusicNote,
+                    contentDescription = null,
+                    tint = colors.onAccent,
+                )
+            }
             Spacer(Modifier.width(12.dp))
-            // 标题（单行省略），副标题为艺术家
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = nowPlaying.title ?: "未知曲目",
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -126,35 +148,25 @@ fun MiniPlayer(
                 if (!artist.isNullOrBlank()) {
                     Text(
                         text = artist,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.sub,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
-            // 上一首
-            IconButton(onClick = { player.previous() }) {
-                Icon(
-                    imageVector = Icons.Filled.SkipPrevious,
-                    contentDescription = "上一首",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
-            // 播放 / 暂停
             IconButton(onClick = { player.togglePlay() }) {
                 Icon(
                     imageVector = if (nowPlaying.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (nowPlaying.isPlaying) "暂停" else "播放",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    tint = colors.accent,
                 )
             }
-            // 下一首
             IconButton(onClick = { player.next() }) {
                 Icon(
                     imageVector = Icons.Filled.SkipNext,
                     contentDescription = "下一首",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    tint = colors.text,
                 )
             }
         }

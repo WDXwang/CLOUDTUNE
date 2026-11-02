@@ -65,14 +65,14 @@ import com.cloudtune.player.ui.components.NovaProgress
 import com.cloudtune.player.ui.navigation.Routes
 import com.cloudtune.player.ui.navigation.ShellBottomBar
 
-// 播放页强制深色 One UI 9 风格（纯黑 + 柔蓝紫 + 大圆角）
+// 播放页：汽水音乐风格（纯黑底 + 柠檬绿强调色 + 大圆角封面）
 private val PlayerBg = Color(0xFF000000)
-private val CardBg = Color(0xFF16181D)
-private val MainText = Color(0xFFF3F4F6)
-private val SubText = Color(0xFF9CA1AB)
-private val Accent = Color(0xFF8B9CFF)
-private val Accent2 = Color(0xFF5A7CFF)
-private val NeonBorder = Color(0xFF2A2D35)
+private val CardBg = Color(0xFF141416)
+private val MainText = Color(0xFFFFFFFF)
+private val SubText = Color(0xFF9A9AA0)
+private val Accent = Color(0xFFD3FF4E)
+private val Accent2 = Color(0xFF9BD400)
+private val NeonBorder = Color(0xFF26262A)
 
 /**
  * 主界面播放页：以播放器为主页，底部为功能导航，播放列表收纳在右下角隐藏式浮层。
@@ -166,35 +166,35 @@ fun PlayerScreen(
 
             Spacer(Modifier.height(6.dp))
 
-            // ===== 封面（居中大卡片） =====
+            // ===== 封面（居中大卡片，柠檬绿渐变） =====
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(260.dp)
-                    .clip(RoundedCornerShape(30.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF232A4A), Color(0xFF4A5FBF), Color(0xFF8B9CFF))))
-                    .border(1.dp, NeonBorder, RoundedCornerShape(30.dp)),
+                    .height(300.dp)
+                    .clip(RoundedCornerShape(40.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFF1B2410), Color(0xFF55731C), Color(0xFFD3FF4E))))
+                    .border(1.dp, NeonBorder, RoundedCornerShape(40.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Filled.MusicNote,
                     contentDescription = null,
-                    modifier = Modifier.size(90.dp),
-                    tint = Color.White.copy(alpha = 0.92f),
+                    modifier = Modifier.size(96.dp),
+                    tint = Color(0xFF0E0E10).copy(alpha = 0.85f),
                 )
             }
 
             Spacer(Modifier.height(22.dp))
 
-            // ===== 标题 / 艺术家（居中） =====
+            // ===== 标题 / 艺术家（汽水风：左对齐） =====
             Text(
                 text = nowPlaying.title.ifBlank { "未知曲目" },
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.ExtraBold,
                 color = MainText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
+                textAlign = TextAlign.Start,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(4.dp))
@@ -204,7 +204,7 @@ fun PlayerScreen(
                 color = SubText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
+                textAlign = TextAlign.Start,
                 modifier = Modifier.fillMaxWidth(),
             )
 

@@ -4,16 +4,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,12 +38,14 @@ import com.cloudtune.player.ui.favorites.FavoritesScreen
 import com.cloudtune.player.ui.history.HistoryScreen
 import com.cloudtune.player.ui.local.LocalScreen
 import com.cloudtune.player.ui.lyrics.LyricsScreen
+import com.cloudtune.player.ui.mine.MineScreen
 import com.cloudtune.player.ui.setup.SetupViewModel
 import com.cloudtune.player.ui.player.PlayerScreen
 import com.cloudtune.player.ui.playlists.PlaylistDetailScreen
 import com.cloudtune.player.ui.playlists.PlaylistsScreen
 import com.cloudtune.player.ui.queue.QueueScreen
 import com.cloudtune.player.ui.settings.SettingsScreen
+import com.cloudtune.player.ui.sources.SourcesScreen
 import com.cloudtune.player.ui.setup.SetupScreen
 import com.cloudtune.player.ui.storages.StoragesScreen
 import com.cloudtune.player.ui.setup.TianyiQrLoginScreen
@@ -69,6 +69,8 @@ object Routes {
     const val EQUALIZER = "equalizer"
     const val LYRICS = "lyrics"
     const val HISTORY = "history"
+    const val MINE = "mine"
+    const val SOURCES = "sources"
 }
 
 /** 顶部壳层：启动时读取一次已保存配置决定起始页 */
@@ -98,9 +100,7 @@ fun AppNavigation() {
     // 当前路由，用于决定是否显示底部导航
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = currentRoute in setOf(
-        Routes.BROWSER, Routes.LOCAL, Routes.PLAYLISTS, Routes.FAVORITES, Routes.SETTINGS
-    )
+    val showBottomBar = currentRoute in setOf(Routes.BROWSER, Routes.MINE)
 
     Scaffold(
         bottomBar = {
@@ -181,6 +181,21 @@ fun AppNavigation() {
                 BrowserScreen(
                     onOpenPlayer = { navController.navigate(Routes.PLAYER) },
                     onOpenStorages = { navController.navigate(Routes.STORAGES) },
+                )
+            }
+            // 我的（主入口：收藏 / 本地 / 歌单 / 历史 / 网盘 / 音源 / 设置）
+            composable(Routes.MINE) {
+                MineScreen(
+                    onOpenRoute = { route ->
+                        navController.navigate(route) { launchSingleTop = true }
+                    },
+                )
+            }
+            // 音源管理（全屏）
+            composable(Routes.SOURCES) {
+                SourcesScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenPlayer = { navController.navigate(Routes.PLAYER) },
                 )
             }
             // 网盘管理（全屏）
@@ -266,19 +281,16 @@ fun AppNavigation() {
     }
 }
 
-/** 底部导航栏：播放 / 文件 / 本地 / 歌单 / 收藏 / 设置 */
+/** 底部导航栏（汽水音乐风格：首页 / 乐库 / 我的 三个主入口） */
 @Composable
 fun ShellBottomBar(
     currentRoute: String?,
     onNavigate: (String) -> Unit,
 ) {
     val items = listOf(
-        Triple(Routes.PLAYER, "播放", Icons.Filled.PlayArrow),
-        Triple(Routes.BROWSER, "文件", Icons.Filled.Folder),
-        Triple(Routes.LOCAL, "本地", Icons.Filled.LibraryMusic),
-        Triple(Routes.PLAYLISTS, "歌单", Icons.Filled.QueueMusic),
-        Triple(Routes.FAVORITES, "收藏", Icons.Filled.Favorite),
-        Triple(Routes.SETTINGS, "设置", Icons.Filled.Settings),
+        Triple(Routes.PLAYER, "首页", Icons.Filled.Home),
+        Triple(Routes.BROWSER, "乐库", Icons.Filled.LibraryMusic),
+        Triple(Routes.MINE, "我的", Icons.Filled.Person),
     )
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -294,6 +306,13 @@ fun ShellBottomBar(
                 },
                 icon = { Icon(icon, contentDescription = label) },
                 label = { Text(label) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
             )
         }
     }

@@ -190,6 +190,26 @@ class PlayerControllerManager(
         c.play()
     }
 
+    /**
+     * 播放第三方音源解析出的直链（不经 CloudFile，MediaItem 直接使用 http(s) URL）。
+     */
+    suspend fun playUrl(url: String, title: String, artist: String = "") {
+        val c = awaitController()
+        val metadata = androidx.media3.common.MediaMetadata.Builder()
+            .setTitle(title)
+            .setArtist(artist)
+            .build()
+        val item = MediaItem.Builder()
+            .setMediaId(url)
+            .setUri(url)
+            .setMediaMetadata(metadata)
+            .build()
+        c.setMediaItem(item)
+        c.prepare()
+        c.setPlaybackParameters(PlaybackParameters(defaultSpeed))
+        c.play()
+    }
+
     /** 播放 / 暂停切换 */
     fun togglePlay() {
         val c = controller ?: return
