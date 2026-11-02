@@ -79,7 +79,7 @@ class LxScriptEngine {
             val ctx = ContextFactory().enterContext()
             try {
                 ctx.optimizationLevel = -1
-                ctx.classShutter = ClassShutter { false }
+                ctx.setClassShutter(ClassShutter { false })
                 val scope = ctx.initStandardObjects()
                 ScriptableObject.putProperty(scope, "__bridge", RhinoContext.javaToJS(bridge, scope))
                 ctx.evaluateString(scope, PRELUDE, "lx-prelude.js", 1, null)
@@ -112,7 +112,7 @@ class LxScriptEngine {
         try {
             ctx.optimizationLevel = -1
             // 禁止脚本访问任意 Java 类，降低第三方脚本的风险
-            ctx.classShutter = ClassShutter { false }
+            ctx.setClassShutter(ClassShutter { false })
             val scope = ctx.initStandardObjects()
             ScriptableObject.putProperty(scope, "__bridge", RhinoContext.javaToJS(bridge, scope))
             ctx.evaluateString(scope, PRELUDE, "lx-prelude.js", 1, null)

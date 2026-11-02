@@ -60,11 +60,12 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
         if (importing) return
         importing = true
         viewModelScope.launch {
-            val text = withContext(Dispatchers.IO) {
+            val text: String? = withContext(Dispatchers.IO) {
                 runCatching {
-                    getApplication<Application>().contentResolver
-                        .openInputStream(uri)
-                        ?.use { it.readText(Charsets.UTF_8) }
+                    val app = getApplication<Application>()
+                    val input = app.contentResolver.openInputStream(uri)
+                        ?: return@runCatching null
+                    input.bufferedReader(Charsets.UTF_8).use { reader -> reader.readText() }
                 }.getOrNull()
             }
             if (text.isNullOrBlank()) {

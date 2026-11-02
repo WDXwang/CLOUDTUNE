@@ -185,6 +185,7 @@ class SourceRepository(context: Context) {
                     if (names.isNotEmpty()) return names.joinToString("/")
                 }
                 is JsonObject -> value.str("name", "title").takeIf { it.isNotBlank() }?.let { return it }
+                else -> null
             }
         }
         return ""
