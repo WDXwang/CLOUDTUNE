@@ -14,6 +14,7 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -58,6 +59,7 @@ class LxScriptEngine {
         runCatching {
             val inited = AtomicReference<String?>(null)
             val failed = AtomicReference<String?>(null)
+            val evalError = AtomicReference<String?>(null)
             val completed = withTimeoutOrNull(EVAL_TIMEOUT_MS) {
                 quickJs {
                     defineBridge(
@@ -65,20 +67,18 @@ class LxScriptEngine {
                         onDone = {},
                         onError = { failed.set(it) },
                     )
-                    evaluate<Any?>(buildString {
-                        append(PRELUDE)
-                        append('\n')
-                        append(script)
-                    })
+                    runCatching { evaluate<Any?>(buildProgram(script)) }
+                        .onFailure { evalError.set(it.message ?: it.toString()) }
                     flushUntil { inited.get() != null || failed.get() != null }
                 }
                 true
             }
             if (completed == null) error("音源脚本初始化超时")
             failed.get()?.let { error(it) }
+            // 脚本可能先发 inited 再抛错（例如日志输出异常），此时仍视为导入成功
             val data = inited.get()
-                ?: error("脚本未返回初始化信息（未调用 lx.send(inited, ...)）")
-            parseMeta(data)
+                ?: error(evalError.get() ?: "脚本未返回初始化信息（未调用 lx.send(inited, ...)）")
+            parseMeta(data, script)
         }
     }
 
@@ -97,6 +97,7 @@ class LxScriptEngine {
         runCatching {
             val done = AtomicReference<String?>(null)
             val failed = AtomicReference<String?>(null)
+            val evalError = AtomicReference<String?>(null)
             val completed = withTimeoutOrNull(EVAL_TIMEOUT_MS) {
                 quickJs {
                     defineBridge(
@@ -104,25 +105,22 @@ class LxScriptEngine {
                         onDone = { done.set(it) },
                         onError = { failed.set(it) },
                     )
-                    val jsAction = Json.encodeToString(String.serializer(), action)
-                    val jsSource = Json.encodeToString(String.serializer(), sourceKey)
-                    val jsInfo = Json.encodeToString(String.serializer(), infoJson)
-                    evaluate<Any?>(buildString {
-                        append(PRELUDE)
-                        append('\n')
-                        append(script)
+                    val tail = buildString {
                         append("\n__lx_call(")
-                        append(jsAction).append(", ")
-                        append(jsSource).append(", ")
-                        append(jsInfo).append(");")
-                    })
+                        append(quote(action)).append(", ")
+                        append(quote(sourceKey)).append(", ")
+                        append(quote(infoJson)).append(");")
+                    }
+                    runCatching { evaluate<Any?>(buildProgram(script, tail)) }
+                        .onFailure { evalError.set(it.message ?: it.toString()) }
                     flushUntil { done.get() != null || failed.get() != null }
                 }
                 true
             }
             if (completed == null) error("音源脚本执行超时")
             failed.get()?.let { error(it) }
-            val raw = done.get() ?: error("音源脚本未返回结果")
+            val raw = done.get()
+                ?: error(evalError.get() ?: "音源脚本未返回结果")
             val element = runCatching { json.parseToJsonElement(raw) }.getOrNull()
             val err = (element as? JsonObject)?.get("__error")?.jsonPrimitive?.contentOrNull
             if (err != null) error(err)
@@ -130,14 +128,28 @@ class LxScriptEngine {
         }
     }
 
-    /** 等待脚本内部的异步任务（Promise 微任务）全部落定。 */
+    /**
+     * 拼装一次求值的完整源码：脚本信息 → 协议兼容层 → 脚本正文 → 尾调用。
+     *
+     * 脚本信息先注入，兼容层里的 `lx.currentScriptInfo` 才能在脚本读取时可用
+     * （部分脚本靠它从头部注释解析 Cookie 等配置）。
+     */
+    private fun buildProgram(script: String, tail: String = ""): String = buildString {
+        append("globalThis.__scriptInfo = ").append(scriptInfoJson(script)).append(";\n")
+        append(PRELUDE)
+        append('\n')
+        append(script)
+        append(tail)
+    }
+
+    /** 等待脚本内部的异步任务（Promise 微任务 / 定时器）落定。 */
     private suspend fun QuickJs.flushUntil(predicate: () -> Boolean) {
-        var tries = 0
-        while (!predicate() && tries < FLUSH_TRIES) {
+        val deadline = System.currentTimeMillis() + FLUSH_TIMEOUT_MS
+        while (!predicate()) {
+            if (System.currentTimeMillis() >= deadline) break
+            runCatching { evaluate<Any?>("__runTimers(); void 0") }
+            if (predicate()) break
             delay(FLUSH_INTERVAL_MS)
-            // 每次求值都会推进 QuickJS 的微任务队列
-            evaluate<Any?>("void 0")
-            tries++
         }
     }
 
@@ -185,7 +197,7 @@ class LxScriptEngine {
     private fun http(url: String, optionsJson: String): String {
         return runCatching {
             val options = runCatching { Json.parseToJsonElement(optionsJson).jsonObject }.getOrNull()
-            val bodyText = (options?.get("body") as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+            val bodyText = (options?.get("body") as? JsonPrimitive)?.contentOrNull
             val method = options?.get("method")?.jsonPrimitive?.contentOrNull
                 ?.uppercase(Locale.US)
                 ?: if (bodyText != null) "POST" else "GET"
@@ -203,15 +215,16 @@ class LxScriptEngine {
                 val headerJson = headersOf(resp)
                 buildString {
                     append("{\"status\":").append(resp.code)
-                    append(",\"body\":").append(Json.encodeToString(String.serializer(), body))
+                    append(",\"statusCode\":").append(resp.code)
+                    append(",\"body\":").append(quote(body))
                     append(",\"headers\":").append(headerJson)
                     append("}")
                 }
             }
         }.getOrElse { e ->
             Log.w("LxSource", "request failed: $url", e)
-            "{\"status\":0,\"body\":\"\",\"headers\":{},\"error\":${
-                Json.encodeToString(String.serializer(), e.message ?: "网络请求失败")
+            "{\"status\":0,\"statusCode\":0,\"body\":\"\",\"headers\":{},\"error\":${
+                quote(e.message ?: "网络请求失败")
             }}"
         }
     }
@@ -219,9 +232,7 @@ class LxScriptEngine {
     private fun headersOf(resp: okhttp3.Response): String {
         val items = resp.headers.names().joinToString(",") { key ->
             val value = resp.headers.values(key).joinToString(",")
-            "${Json.encodeToString(String.serializer(), key)}:${
-                Json.encodeToString(String.serializer(), value)
-            }"
+            "${quote(key)}:${quote(value)}"
         }
         return "{$items}"
     }
@@ -231,33 +242,112 @@ class LxScriptEngine {
         return bytes.joinToString("") { String.format(Locale.US, "%02x", it) }
     }
 
-    private fun parseMeta(raw: String): ScriptMeta {
-        val root = json.parseToJsonElement(raw).jsonObject
-        val info = (root["sourceInfo"] as? JsonObject)
-            ?: error("音源脚本缺少 sourceInfo")
-        val name = info["name"]?.jsonPrimitive?.contentOrNull?.ifBlank { null } ?: "未命名音源"
-        val author = info["author"]?.jsonPrimitive?.contentOrNull.orEmpty()
-        val version = info["version"]?.jsonPrimitive?.contentOrNull.orEmpty()
-        val sourceKeys = info["sources"]?.jsonObject?.keys?.toList().orEmpty()
-        val actions = info["sources"]?.jsonObject?.values
-            ?.mapNotNull { (it as? JsonObject)?.get("actions") as? JsonArray }
-            ?.flatMap { arr -> arr.mapNotNull { it.jsonPrimitive.contentOrNull } }
-            ?.distinct()
-            .orEmpty()
-        return ScriptMeta(name, author, version, sourceKeys, actions)
+    /**
+     * 解析 inited 事件数据。洛雪协议结构为：
+     * `{ status: true, openDevTools: false, sources: { [sourceKey]: { name, type, actions, qualitys } } }`
+     */
+    private fun parseMeta(raw: String, script: String): ScriptMeta {
+        val root = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull()
+            ?: error("音源脚本初始化返回的数据不是合法 JSON")
+        val status = (root["status"] as? JsonPrimitive)?.contentOrNull
+        if (status == "false") {
+            val message = root.str("message", "msg")
+            error(message.ifBlank { "音源脚本初始化失败（status: false）" })
+        }
+        val legacy = root["sourceInfo"] as? JsonObject
+        val sources = (root["sources"] as? JsonObject)
+            ?: (legacy?.get("sources") as? JsonObject)
+            ?: error("音源脚本未注册任何音源（inited 事件缺少 sources）")
+
+        val header = headerMeta(script)
+        val firstSourceName = sources.values.firstNotNullOfOrNull { value ->
+            (value as? JsonObject)?.get("name")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+        }
+        val name = root.str("name").ifBlank {
+            legacy?.str("name").orEmpty()
+        }.ifBlank {
+            header["name"].orEmpty()
+        }.ifBlank {
+            firstSourceName ?: "未命名音源"
+        }
+        val author = header["author"].orEmpty().ifBlank { legacy?.str("author").orEmpty() }
+        val version = header["version"].orEmpty().ifBlank { legacy?.str("version").orEmpty() }
+
+        val actions = sources.values
+            .mapNotNull { (it as? JsonObject)?.get("actions") as? JsonArray }
+            .flatMap { arr -> arr.mapNotNull { it.jsonPrimitive.contentOrNull } }
+            .distinct()
+
+        return ScriptMeta(
+            name = name,
+            author = author,
+            version = version,
+            sources = sources.keys.toList(),
+            actions = actions,
+        )
     }
+
+    /** 从脚本头部注释（`@name` / `@author` / `@version`）读取元信息。 */
+    private fun headerMeta(script: String): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        HEADER_TAG.findAll(script).forEach { match ->
+            val key = match.groupValues[1].lowercase(Locale.US)
+            if (key !in result) result[key] = match.groupValues[2].trim()
+        }
+        return result
+    }
+
+    /** `globalThis.__scriptInfo` 的内容，供 `lx.currentScriptInfo` 使用。 */
+    private fun scriptInfoJson(script: String): String {
+        val header = headerMeta(script)
+        return buildString {
+            append("{\"name\":").append(quote(header["name"].orEmpty()))
+            append(",\"author\":").append(quote(header["author"].orEmpty()))
+            append(",\"version\":").append(quote(header["version"].orEmpty()))
+            append(",\"rawScript\":").append(quote(script))
+            append("}")
+        }
+    }
+
+    private fun JsonObject.str(vararg keys: String): String =
+        keys.firstNotNullOfOrNull { key ->
+            (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        }.orEmpty()
+
+    private fun quote(value: String): String = Json.encodeToString(String.serializer(), value)
 
     private companion object {
         const val EVAL_TIMEOUT_MS = 20_000L
-        const val FLUSH_TRIES = 40
-        const val FLUSH_INTERVAL_MS = 100L
+        const val FLUSH_TIMEOUT_MS = 19_000L
+        const val FLUSH_INTERVAL_MS = 60L
 
-        /** 洛雪自定义源协议兼容层（原生 Promise，无需自实现 Promise）。 */
+        val HEADER_TAG = Regex("@(name|version|author)\\s+([^\\r\\n*]+)")
+
+        /** 洛雪自定义源协议兼容层（原生 Promise / 原生定时器队列）。 */
         val PRELUDE = """
             var __handlers = {};
+            var __timers = [];
+            var __timerId = 1;
+
+            function __fmt(value) {
+              if (typeof value === 'string') return value;
+              if (value === null || value === undefined) return String(value);
+              try { return JSON.stringify(value); } catch (e) { return String(value); }
+            }
+
+            globalThis.console = {
+              log: function () { __bridge.log(Array.prototype.map.call(arguments, __fmt).join(' ')); },
+              info: function () { __bridge.log(Array.prototype.map.call(arguments, __fmt).join(' ')); },
+              warn: function () { __bridge.log('[warn] ' + Array.prototype.map.call(arguments, __fmt).join(' ')); },
+              error: function () { __bridge.log('[error] ' + Array.prototype.map.call(arguments, __fmt).join(' ')); },
+              debug: function () { __bridge.log(Array.prototype.map.call(arguments, __fmt).join(' ')); }
+            };
+
             var __lx = {
               EVENT_NAMES: { inited: 'inited', request: 'request', updateAlert: 'updateAlert' },
               version: '2.0.0',
+              env: { platform: 'android', os: 'android' },
+              currentScriptInfo: globalThis.__scriptInfo || null,
               send: function (name, data) {
                 __bridge.send(name, JSON.stringify(data === undefined ? null : data));
               },
@@ -268,11 +358,13 @@ class LxScriptEngine {
                 try {
                   env = JSON.parse(__bridge.http(url, JSON.stringify(options)));
                 } catch (e) {
-                  env = { status: 0, body: '', headers: {}, error: '网络请求失败' };
+                  env = { status: 0, statusCode: 0, body: '', headers: {}, error: '网络请求失败' };
                 }
-                env.statusCode = env.status;
-                var ok = env.status >= 200 && env.status < 300;
-                var error = ok ? null : new Error(env.error || ('HTTP ' + env.status));
+                var status = env.status === undefined ? env.statusCode : env.status;
+                env.status = status;
+                env.statusCode = status;
+                var ok = status >= 200 && status < 300;
+                var error = ok ? null : new Error(env.error || ('HTTP ' + status));
                 if (typeof callback === 'function') callback(error, env);
                 var promise = ok ? Promise.resolve(env) : Promise.reject(error);
                 // 标记为已处理，避免调用方只用 callback 时产生 unhandled rejection
@@ -287,7 +379,9 @@ class LxScriptEngine {
                 str2b64: function (s) { return __bridge.base64Encode(String(s)); },
                 b642str: function (s) { return __bridge.base64Decode(String(s)); },
                 buffer: {
-                  bufToString: function (b) { return String(b); },
+                  bufToString: function (b) {
+                    return typeof b === 'string' ? b : String(b);
+                  },
                   strToBuf: function (s) { return String(s); }
                 }
               }
@@ -295,14 +389,42 @@ class LxScriptEngine {
             globalThis.lx = __lx;
             globalThis.atob = function (s) { return __bridge.base64Decode(String(s)); };
             globalThis.btoa = function (s) { return __bridge.base64Encode(String(s)); };
-            // 我们的网络桥是同步的，所以 >0 的延时定时器永不触发（仅保留超时保护语义）
+            globalThis.queueMicrotask = function (fn) { Promise.resolve().then(fn); };
+
+            // 定时器队列：由宿主在等待循环里驱动 __runTimers()，因此真正的延时有效
             globalThis.setTimeout = function (fn, ms) {
-              if (typeof fn === 'function' && (!ms || ms <= 0)) Promise.resolve().then(fn);
-              return 0;
+              var id = __timerId++;
+              __timers.push({
+                id: id,
+                due: Date.now() + (typeof ms === 'number' && ms > 0 ? ms : 0),
+                fn: fn,
+                args: Array.prototype.slice.call(arguments, 2)
+              });
+              return id;
             };
-            globalThis.clearTimeout = function () {};
-            globalThis.setInterval = function () { return 0; };
-            globalThis.clearInterval = function () {};
+            globalThis.clearTimeout = function (id) {
+              for (var i = 0; i < __timers.length; i++) {
+                if (__timers[i].id === id) { __timers.splice(i, 1); return; }
+              }
+            };
+            globalThis.setInterval = function (fn, ms) { return globalThis.setTimeout(fn, ms); };
+            globalThis.clearInterval = globalThis.clearTimeout;
+
+            function __runTimers() {
+              var now = Date.now();
+              var due = [];
+              var rest = [];
+              for (var i = 0; i < __timers.length; i++) {
+                (now >= __timers[i].due ? due : rest).push(__timers[i]);
+              }
+              if (due.length === 0) return;
+              __timers = rest;
+              for (var j = 0; j < due.length; j++) {
+                try {
+                  if (typeof due[j].fn === 'function') due[j].fn.apply(null, due[j].args);
+                } catch (e) { }
+              }
+            }
 
             function __lx_call(action, source, infoJson) {
               try {

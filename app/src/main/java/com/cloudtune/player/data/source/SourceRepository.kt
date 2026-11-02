@@ -90,13 +90,17 @@ class SourceRepository(context: Context) {
     suspend fun resolveUrl(info: MusicSourceInfo, song: SourceSong): Result<String> = runCatching {
         val script = store.script(info.id) ?: error("音源脚本文件不存在，请重新导入")
         val sourceKey = song.sourceKey.ifBlank { info.sources.firstOrNull().orEmpty() }
-        val infoJson = song.raw.ifBlank {
-            buildString {
-                append("{\"musicInfo\":{\"songmid\":"); append(quoted(song.id))
-                append(",\"name\":"); append(quoted(song.name))
-                append(",\"singer\":"); append(quoted(song.artist))
-                append("}}")
-            }
+        val infoJson = buildString {
+            append("{\"musicInfo\":")
+            append(song.raw.ifBlank {
+                buildString {
+                    append("{\"songmid\":").append(quoted(song.id))
+                    append(",\"name\":").append(quoted(song.name))
+                    append(",\"singer\":").append(quoted(song.artist))
+                    append("}")
+                }
+            })
+            append(",\"type\":\"128k\"}")
         }
         val raw = engine.call(script, ACTION_MUSIC_URL, sourceKey, infoJson).getOrThrow()
         val element = runCatching { json.parseToJsonElement(raw) }.getOrNull()
