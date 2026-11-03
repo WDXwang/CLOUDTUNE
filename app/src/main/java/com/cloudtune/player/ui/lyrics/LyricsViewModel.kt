@@ -4,9 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.cloudtune.player.CloudTuneApp
-import com.cloudtune.player.data.lyrics.LyricLine
-import com.cloudtune.player.data.lyrics.LyricsParser
+import com.cloudtune.player.data.lyrics.LyricsParsers
 import com.cloudtune.player.data.lyrics.LyricsRepository
+import com.cloudtune.player.data.lyrics.WordLyricLine
+import com.cloudtune.player.data.lyrics.WordAligner
 import com.cloudtune.player.player.NowPlayingUi
 import com.cloudtune.player.player.PlayerControllerManager
 import kotlinx.coroutines.Job
@@ -27,7 +28,8 @@ sealed interface LyricsStatus {
 }
 
 /**
- * 歌词页 ViewModel：跟踪当前歌曲，自动从网络拉取并解析 LRC。
+ * 歌词页 ViewModel：跟踪当前歌曲，自动从网络拉取并解析多格式歌词（LRC/KRC/TTML/QRC）。
+ * 解析后自动应用简化版逐字对齐（纯 Kotlin 等间距）以保证体验。
  */
 class LyricsViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -41,8 +43,8 @@ class LyricsViewModel(app: Application) : AndroidViewModel(app) {
     private val _status = MutableStateFlow<LyricsStatus>(LyricsStatus.Idle)
     val status: StateFlow<LyricsStatus> = _status.asStateFlow()
 
-    private val _lines = MutableStateFlow<List<LyricLine>>(emptyList())
-    val lines: StateFlow<List<LyricLine>> = _lines.asStateFlow()
+    private val _lines = MutableStateFlow<List<WordLyricLine>>(emptyList())
+    val lines: StateFlow<List<WordLyricLine>> = _lines.asStateFlow()
 
     private var lastKey = ""
     private var fetchJob: Job? = null
@@ -62,18 +64,21 @@ class LyricsViewModel(app: Application) : AndroidViewModel(app) {
                 _lines.value = emptyList()
                 // 等一小段，确保拿到切歌后的稳定标题
                 delay(400)
-                val lrc = try {
-                    repository.fetchLyrics(np.title, np.artist)
+                val raw = try {
+                    repository.fetchLyricsBytes(np.title, np.artist)
                 } catch (t: Throwable) {
                     null
                 }
-                if (lrc == null) {
+                if (raw == null || raw.isEmpty()) {
                     _status.value = LyricsStatus.NoLyrics
                 } else {
-                    val parsed = LyricsParser.parse(lrc)
-                    if (parsed.isEmpty()) _status.value = LyricsStatus.NoLyrics
-                    else {
-                        _lines.value = parsed
+                    val parsed = LyricsParsers.parse(raw)
+                    if (parsed.isEmpty()) {
+                        _status.value = LyricsStatus.NoLyrics
+                    } else {
+                        // 对所有缺少逐字时间戳的行应用简化版对齐
+                        val aligned = WordAligner.alignAll(parsed)
+                        _lines.value = aligned
                         _status.value = LyricsStatus.Loaded
                     }
                 }

@@ -216,6 +216,12 @@ class PlayerControllerManager(
         if (c.isPlaying) c.pause() else c.play()
     }
 
+    /** 显式暂停（不受当前播放状态影响）。 */
+    fun pause() { controller?.pause() }
+
+    /** 显式播放（不受当前播放状态影响）。 */
+    fun play() { controller?.play() }
+
     fun next() { controller?.seekToNext() }
 
     fun previous() { controller?.seekToPrevious() }

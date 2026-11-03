@@ -2,6 +2,10 @@ package com.cloudtune.player
 
 import android.app.Application
 import android.content.Context
+import com.cloudtune.player.core.provider.CloudProvider
+import com.cloudtune.player.core.provider.LocalProvider
+import com.cloudtune.player.core.provider.MusicProviderRegistry
+import com.cloudtune.player.core.provider.SourceProvider
 import com.cloudtune.player.data.DefaultCloudDataSourceFactory
 import com.cloudtune.player.data.MusicRepository
 import com.cloudtune.player.data.db.AppDatabase
@@ -20,8 +24,8 @@ import kotlinx.coroutines.launch
 /**
  * Application 入口，同时是手动依赖注入的组合根（Composition Root）。
  *
- * 演示项目不引入 Hilt，统一在 [AppContainer] 中创建并持有单例，
- * 界面通过 `(application as CloudTuneApp).container` 获取依赖。
+ * 借鉴 MeloX 架构：MusicProviderRegistry 统一管理网盘/本地/第三方音源，
+ * 各 Provider 通过 Mixin 接口按需声明 Search/Playback/HomeFeed 等能力。
  */
 class CloudTuneApp : Application() {
 
@@ -30,11 +34,17 @@ class CloudTuneApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         container = AppContainer(this)
         // 首次启动自动导入内置官方源（网易云热歌榜）
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             container.sourceRepository.ensureBuiltinSources(this@CloudTuneApp)
         }
+    }
+
+    companion object {
+        lateinit var instance: CloudTuneApp
+            private set
     }
 }
 
@@ -70,6 +80,16 @@ class AppContainer(context: Context) {
     val sourceRepository: com.cloudtune.player.data.source.SourceRepository =
         com.cloudtune.player.data.source.SourceRepository(appContext)
 
+    /**
+     * MusicProvider 注册表 — 借鉴 MeloX 的 Provider 架构，
+     * 把网盘、本地、第三方音源统一成 Mixin 能力接口。
+     */
+    val providerRegistry = MusicProviderRegistry().also { reg ->
+        reg.register(CloudProvider(repository))
+        reg.register(LocalProvider(appContext, repository))
+        reg.register(SourceProvider(sourceRepository))
+    }
+
     /** 音量增益控制器（绑定音频会话，实现超过 100% 音量） */
     val volumeBoost = VolumeBoostController()
 
@@ -82,6 +102,10 @@ class AppContainer(context: Context) {
         // 预加载持久化的均衡器设置
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { it.loadFromStore() }
     }
+
+    /** 睡眠定时控制器 */
+    val sleepTimer: com.cloudtune.player.player.SleepTimer =
+        com.cloudtune.player.player.SleepTimer(playerManager)
 
     /** DLNA 投屏控制器（SSDP 发现 + SOAP 投放 + 本地 HTTP 分享） */
     val dlnaController: com.cloudtune.player.cast.DlnaController =

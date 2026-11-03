@@ -25,16 +25,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.cloudtune.player.data.lyrics.LyricLine
+import com.cloudtune.player.data.lyrics.WordLyricLine
 
 /**
- * 歌词页：随播放进度滚动，当前行高亮居中。
+ * 歌词页：随播放进度滚动，当前行高亮居中；支持逐字高亮。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,8 +54,8 @@ fun LyricsScreen(
 
     // 当前歌词行索引（按播放位置）
     val currentIndex = remember(lines, positionMs) {
-        lines.indexOfLast { it.timeMs <= positionMs }
-            .coerceAtLeast(0)
+        if (lines.isEmpty()) 0
+        else lines.indexOfLast { it.timeMs <= positionMs }.coerceAtLeast(0)
     }
 
     // 自动滚动让当前行居中
@@ -102,10 +105,12 @@ fun LyricsScreen(
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         item { Spacer(Modifier.height(half)) }
-                        itemsIndexed(lines, key = { _, it -> it.timeMs to it.text }) { index, line: LyricLine ->
+                        itemsIndexed(lines, key = { _, it -> it.timeMs to it.text }) { index, line ->
+                            val isCurrent = index == currentIndex
                             LyricRow(
-                                text = line.text,
-                                active = index == currentIndex,
+                                line = line,
+                                active = isCurrent,
+                                positionMs = if (isCurrent) positionMs else -1L,
                             )
                         }
                         item { Spacer(Modifier.height(half)) }
@@ -116,17 +121,55 @@ fun LyricsScreen(
     }
 }
 
+/**
+ * 渲染一行歌词：
+ * - 非当前行：普通文本
+ * - 当前行 + 有逐字时间戳：逐字高亮（找到当前播放到的字）
+ * - 当前行 + 无逐字：整行高亮
+ */
 @Composable
-private fun LyricRow(text: String, active: Boolean) {
-    Text(
-        text = text,
-        color = if (active) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-        fontSize = if (active) 20.sp else 16.sp,
-        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-        textAlign = TextAlign.Center,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 28.dp, vertical = 10.dp),
-    )
+private fun LyricRow(
+    line: WordLyricLine,
+    active: Boolean,
+    positionMs: Long,
+) {
+    val baseColor = if (active) MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.onSurfaceVariant
+    val activeFontSize = 20.sp
+    val normalFontSize = 16.sp
+
+    if (active && line.isWordLevel) {
+        // 找到当前字索引：最后一个 timeMs <= positionMs 的字
+        val currentWordIdx = line.words.indexOfLast { it.timeMs <= positionMs }.coerceAtLeast(0)
+        val text = buildAnnotatedString {
+            line.words.forEachIndexed { idx, word ->
+                withStyle(
+                    SpanStyle(
+                        color = if (idx <= currentWordIdx) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        fontWeight = if (idx == currentWordIdx) FontWeight.Bold else FontWeight.Normal,
+                    )
+                ) { append(word.text) }
+            }
+        }
+        Text(
+            text = text,
+            fontSize = activeFontSize,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp, vertical = 10.dp),
+        )
+    } else {
+        Text(
+            text = line.text,
+            color = baseColor,
+            fontSize = if (active) activeFontSize else normalFontSize,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp, vertical = 10.dp),
+        )
+    }
 }

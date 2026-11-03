@@ -5,9 +5,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
@@ -32,9 +32,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cloudtune.player.CloudTuneApp
-import com.cloudtune.player.ui.browser.BrowserScreen
 import com.cloudtune.player.ui.components.LoadingBox
 import com.cloudtune.player.ui.components.MiniPlayer
 import com.cloudtune.player.ui.components.SideDrawer
@@ -43,8 +41,6 @@ import com.cloudtune.player.ui.favorites.FavoritesScreen
 import com.cloudtune.player.ui.history.HistoryScreen
 import com.cloudtune.player.ui.local.LocalScreen
 import com.cloudtune.player.ui.lyrics.LyricsScreen
-import com.cloudtune.player.ui.mine.MineScreen
-import com.cloudtune.player.ui.setup.SetupViewModel
 import com.cloudtune.player.ui.player.PlayerScreen
 import com.cloudtune.player.ui.playlists.PlaylistDetailScreen
 import com.cloudtune.player.ui.playlists.PlaylistsScreen
@@ -52,17 +48,28 @@ import com.cloudtune.player.ui.queue.QueueScreen
 import com.cloudtune.player.ui.settings.SettingsScreen
 import com.cloudtune.player.ui.sources.SourcesScreen
 import com.cloudtune.player.ui.setup.SetupScreen
-import com.cloudtune.player.ui.storages.StoragesScreen
+import com.cloudtune.player.ui.setup.SetupViewModel
 import com.cloudtune.player.ui.setup.TianyiQrLoginScreen
 import com.cloudtune.player.ui.setup.TianyiWebLoginScreen
+import com.cloudtune.player.ui.storages.StoragesScreen
+import com.cloudtune.player.ui.tabs.ExploreScreen
+import com.cloudtune.player.ui.tabs.HomeScreen
+import com.cloudtune.player.ui.tabs.LibraryScreen
+import com.cloudtune.player.ui.tabs.SearchScreen
 import kotlinx.coroutines.flow.first
 
 /** 路由表 */
 object Routes {
+    // 四 Tab 主入口
+    const val HOME = "home"
+    const val EXPLORE = "explore"
+    const val LIBRARY = "library"
+    const val SEARCH = "search"
+
+    // 全屏页面
     const val SETUP = "setup"
     const val TIANYI_WEB_LOGIN = "tianyi_web_login"
     const val TIANYI_QR_LOGIN = "tianyi_qr_login"
-    const val BROWSER = "browser"
     const val STORAGES = "storages"
     const val LOCAL = "local"
     const val PLAYLISTS = "playlists"
@@ -74,7 +81,6 @@ object Routes {
     const val EQUALIZER = "equalizer"
     const val LYRICS = "lyrics"
     const val HISTORY = "history"
-    const val MINE = "mine"
     const val SOURCES = "sources"
 }
 
@@ -85,16 +91,16 @@ fun AppNavigation() {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
-    // 读取存储列表首值：未添加任何网盘 → setup；否则 → 主界面（乐库）
+    // 读取存储列表首值：未添加任何网盘 → setup；否则 → Home Tab
     val startRoute by produceState<String?>(initialValue = null) {
-        value = if (container.repository.accounts.first().isEmpty()) Routes.SETUP else Routes.BROWSER
+        value = if (container.repository.accounts.first().isEmpty()) Routes.SETUP else Routes.HOME
     }
     if (startRoute == null) {
         LoadingBox()
         return
     }
 
-    // 统一的底部导航切换
+    // 统一的底部导航切换（保持 Tab 状态）
     val navTo: (String) -> Unit = { route ->
         navController.navigate(route) {
             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -106,7 +112,8 @@ fun AppNavigation() {
     // 当前路由，用于决定是否显示底部导航
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = currentRoute in setOf(Routes.BROWSER, Routes.MINE)
+    val tabRoutes = setOf(Routes.HOME, Routes.EXPLORE, Routes.LIBRARY, Routes.SEARCH)
+    val showBottomBar = currentRoute in tabRoutes
 
     SideDrawer(
         drawerState = drawerState,
@@ -118,7 +125,7 @@ fun AppNavigation() {
             bottomBar = {
                 if (showBottomBar) {
                     Column {
-                        // 全局迷你播放条（有播放项时才显示，否则占位为空）
+                        // 全局迷你播放条（有播放项时才显示）
                         MiniPlayer(onOpenPlayer = { navController.navigate(Routes.PLAYER) })
                         ShellBottomBar(currentRoute, navTo)
                     }
@@ -132,14 +139,43 @@ fun AppNavigation() {
                     .fillMaxSize()
                     .padding(padding),
             ) {
-                // 添加网盘：首次配置进入主界面；从网盘管理页进入则直接返回
+                // ─── 四 Tab 主入口 ───
+                composable(Routes.HOME) {
+                    HomeScreen(
+                        onOpenPlayer = { navController.navigate(Routes.PLAYER) },
+                    )
+                }
+                composable(Routes.EXPLORE) {
+                    ExploreScreen(
+                        onOpenPlayer = { navController.navigate(Routes.PLAYER) },
+                    )
+                }
+                composable(Routes.LIBRARY) {
+                    LibraryScreen(
+                        onOpenStorages = { navController.navigate(Routes.STORAGES) },
+                        onOpenLocal = { navController.navigate(Routes.LOCAL) },
+                        onOpenPlaylists = { navController.navigate(Routes.PLAYLISTS) },
+                        onOpenFavorites = { navController.navigate(Routes.FAVORITES) },
+                        onOpenHistory = { navController.navigate(Routes.HISTORY) },
+                        onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                        onOpenSources = { navController.navigate(Routes.SOURCES) },
+                        onOpenPlayer = { navController.navigate(Routes.PLAYER) },
+                    )
+                }
+                composable(Routes.SEARCH) {
+                    SearchScreen(
+                        onOpenPlayer = { navController.navigate(Routes.PLAYER) },
+                    )
+                }
+
+                // ─── 全屏页面（不显示底部导航） ───
                 composable(Routes.SETUP) {
                     SetupScreen(
                         onConfigured = {
                             if (navController.previousBackStackEntry != null) {
                                 navController.popBackStack()
                             } else {
-                                navController.navigate(Routes.BROWSER) {
+                                navController.navigate(Routes.HOME) {
                                     popUpTo(Routes.SETUP) { inclusive = true }
                                 }
                             }
@@ -152,13 +188,10 @@ fun AppNavigation() {
                         },
                     )
                 }
-                // 天翼云盘扫码登录（全屏，原生二维码）
                 composable(Routes.TIANYI_QR_LOGIN) {
                     val previous = navController.previousBackStackEntry
-                    // 直接取到设置页的 SetupViewModel，登录成功后同步回填 Cookie，
-                    // 不依赖 SavedStateHandle 的异步事件（更可靠）
                     val setupVm: SetupViewModel? =
-                        previous?.let { viewModel(viewModelStoreOwner = it) }
+                        previous?.let { androidx.lifecycle.viewmodel.compose.viewModel(viewModelStoreOwner = it) }
                     TianyiQrLoginScreen(
                         onBack = { navController.popBackStack() },
                         onLoggedIn = { result ->
@@ -174,12 +207,10 @@ fun AppNavigation() {
                         },
                     )
                 }
-                // 天翼云盘手机 Web 登录（全屏）
                 composable(Routes.TIANYI_WEB_LOGIN) {
-                    // 登录成功回填 Cookie 后返回设置页
                     val previous = navController.previousBackStackEntry
                     val setupVm: SetupViewModel? =
-                        previous?.let { viewModel(viewModelStoreOwner = it) }
+                        previous?.let { androidx.lifecycle.viewmodel.compose.viewModel(viewModelStoreOwner = it) }
                     TianyiWebLoginScreen(
                         onBack = { navController.popBackStack() },
                         onLoggedIn = { cookie ->
@@ -188,48 +219,27 @@ fun AppNavigation() {
                         },
                     )
                 }
-                // 文件（多网盘聚合首页 + 主入口）
-                composable(Routes.BROWSER) {
-                    BrowserScreen(
-                        onOpenPlayer = { navController.navigate(Routes.PLAYER) },
-                        onOpenStorages = { navController.navigate(Routes.STORAGES) },
-                        drawerState = drawerState,
-                    )
-                }
-                // 我的（辅助入口）
-                composable(Routes.MINE) {
-                    MineScreen(
-                        onOpenRoute = { route ->
-                            navController.navigate(route) { launchSingleTop = true }
-                        },
-                    )
-                }
-                // 音源管理（全屏）
                 composable(Routes.SOURCES) {
                     SourcesScreen(
                         onBack = { navController.popBackStack() },
                         onOpenPlayer = { navController.navigate(Routes.PLAYER) },
                     )
                 }
-                // 网盘管理（全屏）
                 composable(Routes.STORAGES) {
                     StoragesScreen(
                         onBack = { navController.popBackStack() },
                         onAdd = { navController.navigate(Routes.SETUP) },
                     )
                 }
-                // 本地音乐
                 composable(Routes.LOCAL) {
                     LocalScreen(onOpenPlayer = { navController.navigate(Routes.PLAYER) })
                 }
-                // 歌单
                 composable(Routes.PLAYLISTS) {
                     PlaylistsScreen(onOpenPlaylist = { id, name ->
                         val encoded = java.net.URLEncoder.encode(name, "UTF-8")
                         navController.navigate("playlist/$id?name=$encoded")
                     })
                 }
-                // 歌单详情（全屏）
                 composable(
                     route = Routes.PLAYLIST_DETAIL,
                     arguments = listOf(
@@ -245,11 +255,9 @@ fun AppNavigation() {
                         playlistName = name,
                     )
                 }
-                // 收藏
                 composable(Routes.FAVORITES) {
                     FavoritesScreen(onOpenPlayer = { navController.navigate(Routes.PLAYER) })
                 }
-                // 设置
                 composable(Routes.SETTINGS) {
                     SettingsScreen(
                         onBack = { navController.popBackStack() },
@@ -257,33 +265,27 @@ fun AppNavigation() {
                         onOpenEqualizer = { navController.navigate(Routes.EQUALIZER) },
                         onOpenHistory = { navController.navigate(Routes.HISTORY) },
                         onLoggedOut = {
-                            // 退出登录后回到配置页，清空整个返回栈
                             navController.navigate(Routes.SETUP) {
                                 popUpTo(navController.graph.id) { inclusive = true }
                             }
                         },
                     )
                 }
-                // 均衡器（全屏）
                 composable(Routes.EQUALIZER) {
                     EqualizerScreen(onBack = { navController.popBackStack() })
                 }
-                // 正在播放（主界面：深色播放页 + 底部导航 + 右下角隐藏式队列）
                 composable(Routes.PLAYER) {
                     PlayerScreen(
                         onNavigate = navTo,
                         onOpenLyrics = { navController.navigate(Routes.LYRICS) },
                     )
                 }
-                // 播放队列（全屏）
                 composable(Routes.QUEUE) {
                     QueueScreen(onBack = { navController.popBackStack() })
                 }
-                // 歌词（全屏）
                 composable(Routes.LYRICS) {
                     LyricsScreen(onBack = { navController.popBackStack() })
                 }
-                // 历史播放（全屏）
                 composable(Routes.HISTORY) {
                     HistoryScreen(
                         onBack = { navController.popBackStack() },
@@ -295,16 +297,17 @@ fun AppNavigation() {
     }
 }
 
-/** 底部导航栏：首页 / 乐库 / 我的 三个主入口 */
+/** 底部导航栏：Home / Explore / Library / Search 四个主入口 */
 @Composable
 fun ShellBottomBar(
     currentRoute: String?,
     onNavigate: (String) -> Unit,
 ) {
     val items = listOf(
-        Triple(Routes.PLAYER, "首页", Icons.Filled.Home),
-        Triple(Routes.BROWSER, "乐库", Icons.Filled.LibraryMusic),
-        Triple(Routes.MINE, "我的", Icons.Filled.Person),
+        Triple(Routes.HOME, "首页", Icons.Filled.Home),
+        Triple(Routes.EXPLORE, "探索", Icons.Filled.Explore),
+        Triple(Routes.LIBRARY, "乐库", Icons.Filled.LibraryMusic),
+        Triple(Routes.SEARCH, "搜索", Icons.Filled.Search),
     )
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,

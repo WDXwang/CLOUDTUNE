@@ -23,13 +23,21 @@ class LyricsRepository {
         .build()
 
     /**
-     * 按标题与艺术家抓取 LRC 歌词文本；无歌词 / 失败返回 null。
+     * 按标题与艺术家抓取歌词文本（原始 String）；无歌词 / 失败返回 null。
      */
     suspend fun fetchLyrics(title: String, artist: String?): String? = withContext(Dispatchers.IO) {
+        val bytes = fetchLyricsBytes(title, artist) ?: return@withContext null
+        String(bytes, Charsets.UTF_8)
+    }
+
+    /**
+     * 按标题与艺术家抓取歌词原始字节（支持多格式解析）；无歌词 / 失败返回 null。
+     */
+    suspend fun fetchLyricsBytes(title: String, artist: String?): ByteArray? = withContext(Dispatchers.IO) {
         val query = listOf(title, artist).filter { !it.isNullOrBlank() }.joinToString(" ").trim()
         if (query.isBlank()) return@withContext null
         val songId = searchSong(query) ?: return@withContext null
-        fetchLrc(songId)
+        fetchLrc(songId)?.toByteArray(Charsets.UTF_8)
     }
 
     /** 网易云搜索，返回命中第一首歌的 id（歌曲、无结果返回 null）。 */
