@@ -23,6 +23,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * 云盘文件浏览页 ViewModel（多网盘聚合）。
@@ -52,6 +56,26 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
 
     private var searchJob: Job? = null
     private var sourceLoadJob: Job? = null
+
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    /** 汽水伪榜单：关键词即榜单名 */
+    private val QISHUI_KEYWORDS = listOf("热歌", "新歌", "飙升")
+
+    /** 判定汽水源的 key 片段 */
+    private val QISHUI_HINTS = listOf("汽水", "qishui", "qsd", "soda")
+
+    /** 伪榜单 id 前缀 */
+    private val PSEUDO_PREFIX = "pseudo:"
+
+    /** 歌曲原始 JSON 中可能表示热度的字段 */
+    private val HEAT_KEYS = listOf(
+        "heat", "hot", "hotValue", "score", "popularity",
+        "playCount", "play_count", "listenCount", "listen_count", "likeCount",
+    )
+
+    /** 每个榜单展示的歌曲数 */
+    private val BOARD_SONG_LIMIT = 10
 
     var uiState by mutableStateOf(BrowserUiState())
         private set
@@ -107,6 +131,16 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
                                 }
                         }
                     }.awaitAll().flatten()
+                }.toMutableList()
+
+                // 汽水音乐没有公开榜单接口，用其搜索能力拼成伪榜单
+                qishuiSource(sources)?.let { src ->
+                    boards += QISHUI_KEYWORDS.map { keyword ->
+                        SourceBoard(
+                            id = encodePseudoBoardId(src.id, keyword),
+                            name = "汽水·${keyword}榜",
+                        )
+                    }
                 }
                 val firstBoard = boards.firstOrNull()
                 val boardSongs = firstBoard?.let { loadBoardSongs(it) }.orEmpty()
@@ -158,7 +192,37 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun loadBoardSongs(board: SourceBoard): List<SourceSong> {
         val (sourceId, boardId) = decodeBoardId(board.id)
         val source = sourceUiState.sources.firstOrNull { it.id == sourceId } ?: return emptyList()
-        return sourceRepository.loadBoard(source, boardId).getOrNull()?.songs.orEmpty().take(10)
+        // 汽水伪榜单：用搜索关键词出歌，按热度降序（接口不带热度时保留原有顺序）
+        if (boardId.startsWith(PSEUDO_PREFIX)) {
+            val keyword = boardId.removePrefix(PSEUDO_PREFIX)
+            val songs = sourceRepository.search(source, keyword).getOrNull()?.songs.orEmpty()
+            return songs.distinctBy { it.id }
+                .sortedByDescending { heatOf(it) }
+                .take(BOARD_SONG_LIMIT)
+        }
+        return sourceRepository.loadBoard(source, boardId).getOrNull()?.songs.orEmpty().take(BOARD_SONG_LIMIT)
+    }
+
+    /** 找出带汽水音乐搜索能力的音源（聚合脚本里汽水源的 key 常为 qishui / qsd / 汽水） */
+    private fun qishuiSource(sources: List<MusicSourceInfo>): MusicSourceInfo? =
+        sources.firstOrNull { src ->
+            val searchable = src.sourceActions.entries
+                .filter { (_, acts) -> acts.contains("musicSearch") || acts.contains("search") }
+                .map { it.key }
+                .ifEmpty { src.sources }
+            searchable.any { key -> QISHUI_HINTS.any { hint -> key.contains(hint, ignoreCase = true) } }
+        }
+
+    /** 从歌曲原始 JSON 中取热度字段，用于伪榜单排序 */
+    private fun heatOf(song: SourceSong): Long {
+        if (song.raw.isBlank()) return 0L
+        val obj = runCatching { json.parseToJsonElement(song.raw).jsonObject }.getOrNull() ?: return 0L
+        for (key in HEAT_KEYS) {
+            val value = runCatching { obj[key]?.jsonPrimitive?.contentOrNull }.getOrNull()
+                ?.toDoubleOrNull() ?: continue
+            if (value > 0) return value.toLong()
+        }
+        return 0L
     }
 
     private fun sourceForSong(song: SourceSong): MusicSourceInfo? {
@@ -169,6 +233,10 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun encodeBoardId(sourceId: String, boardId: String): String = "$sourceId|$boardId"
+
+    /** 伪榜单 id：`sourceId|pseudo:热歌` */
+    private fun encodePseudoBoardId(sourceId: String, keyword: String): String =
+        "$sourceId|$PSEUDO_PREFIX$keyword"
 
     /** 榜单前缀：网易云热歌榜 → 网易云；酷狗音乐榜 → 酷狗 */
     private fun sourceLabel(name: String): String =
