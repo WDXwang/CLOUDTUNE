@@ -94,60 +94,73 @@ class SourceRepository(context: Context) {
 
     /** 拉取榜单：boardId 为空时取榜单目录，否则取该榜单歌曲。 */
     suspend fun loadBoard(info: MusicSourceInfo, boardId: String?): Result<SourcePayload> = runCatching {
-        val script = store.script(info.id) ?: error("音源脚本文件不存在，请重新导入")
-        val sourceKey = info.sources.firstOrNull().orEmpty()
-        val infoJson = if (boardId.isNullOrBlank()) "{}" else buildString {
-            append("{\"boardId\":"); append(quoted(boardId))
-            append(",\"id\":"); append(quoted(boardId))
-            append(",\"board\":"); append(quoted(boardId))
-            append("}")
+        // 内置源直接走原生实现，绕开 JS 引擎
+        if (BuiltinSources.isBuiltin(info.name)) {
+            BuiltinSources.loadBoard(boardId).getOrThrow()
+        } else {
+            val script = store.script(info.id) ?: error("音源脚本文件不存在，请重新导入")
+            val sourceKey = info.sources.firstOrNull().orEmpty()
+            val infoJson = if (boardId.isNullOrBlank()) "{}" else buildString {
+                append("{\"boardId\":"); append(quoted(boardId))
+                append(",\"id\":"); append(quoted(boardId))
+                append(",\"board\":"); append(quoted(boardId))
+                append("}")
+            }
+            val raw = engine.call(script, ACTION_LEADERBOARD, sourceKey, infoJson).getOrThrow()
+            parsePayload(raw)
         }
-        val raw = engine.call(script, ACTION_LEADERBOARD, sourceKey, infoJson).getOrThrow()
-        parsePayload(raw)
     }
 
     /** 用音源脚本搜索歌曲（洛雪扩展 action：`musicSearch` / `search`）。 */
     suspend fun search(info: MusicSourceInfo, keyword: String): Result<SourcePayload> = runCatching {
-        val script = store.script(info.id) ?: error("音源脚本文件不存在，请重新导入")
-        val action = when {
-            info.supports(ACTION_MUSIC_SEARCH) -> ACTION_MUSIC_SEARCH
-            info.supports(ACTION_SEARCH) -> ACTION_SEARCH
-            else -> error("该音源未提供搜索接口（仅支持解析播放地址），无法搜索歌曲")
+        if (BuiltinSources.isBuiltin(info.name)) {
+            BuiltinSources.search(keyword).getOrThrow()
+        } else {
+            val script = store.script(info.id) ?: error("音源脚本文件不存在，请重新导入")
+            val action = when {
+                info.supports(ACTION_MUSIC_SEARCH) -> ACTION_MUSIC_SEARCH
+                info.supports(ACTION_SEARCH) -> ACTION_SEARCH
+                else -> error("该音源未提供搜索接口（仅支持解析播放地址），无法搜索歌曲")
+            }
+            val sourceKey = info.sourceFor(action)
+            val infoJson = buildString {
+                append("{\"keyword\":").append(quoted(keyword))
+                append(",\"text\":").append(quoted(keyword))
+                append(",\"page\":1,\"limit\":30}")
+            }
+            val raw = engine.call(script, action, sourceKey, infoJson).getOrThrow()
+            parsePayload(raw)
         }
-        val sourceKey = info.sourceFor(action)
-        val infoJson = buildString {
-            append("{\"keyword\":").append(quoted(keyword))
-            append(",\"text\":").append(quoted(keyword))
-            append(",\"page\":1,\"limit\":30}")
-        }
-        val raw = engine.call(script, action, sourceKey, infoJson).getOrThrow()
-        parsePayload(raw)
     }
 
     /** 解析某首歌的播放直链。 */
     suspend fun resolveUrl(info: MusicSourceInfo, song: SourceSong): Result<String> = runCatching {
-        val script = store.script(info.id) ?: error("音源脚本文件不存在，请重新导入")
-        val sourceKey = song.sourceKey.ifBlank { info.sources.firstOrNull().orEmpty() }
-        val infoJson = buildString {
-            append("{\"musicInfo\":")
-            append(song.raw.ifBlank {
-                buildString {
-                    append("{\"songmid\":").append(quoted(song.id))
-                    append(",\"name\":").append(quoted(song.name))
-                    append(",\"singer\":").append(quoted(song.artist))
-                    append("}")
-                }
-            })
-            append(",\"type\":\"128k\"}")
+        if (BuiltinSources.isBuiltin(info.name)) {
+            BuiltinSources.resolveUrl(song.id)
+        } else {
+            val script = store.script(info.id) ?: error("音源脚本文件不存在，请重新导入")
+            val sourceKey = song.sourceKey.ifBlank { info.sources.firstOrNull().orEmpty() }
+            val infoJson = buildString {
+                append("{\"musicInfo\":")
+                append(song.raw.ifBlank {
+                    buildString {
+                        append("{\"songmid\":").append(quoted(song.id))
+                        append(",\"name\":").append(quoted(song.name))
+                        append(",\"singer\":").append(quoted(song.artist))
+                        append("}")
+                    }
+                })
+                append(",\"type\":\"128k\"}")
+            }
+            val raw = engine.call(script, ACTION_MUSIC_URL, sourceKey, infoJson).getOrThrow()
+            val element = runCatching { json.parseToJsonElement(raw) }.getOrNull()
+            val url = when (element) {
+                is JsonPrimitive -> element.contentOrNull
+                is JsonObject -> element.str("url", "musicUrl", "src", "playUrl", "link")
+                else -> null
+            }
+            url?.takeIf { it.isNotBlank() } ?: error("音源未返回可播放地址")
         }
-        val raw = engine.call(script, ACTION_MUSIC_URL, sourceKey, infoJson).getOrThrow()
-        val element = runCatching { json.parseToJsonElement(raw) }.getOrNull()
-        val url = when (element) {
-            is JsonPrimitive -> element.contentOrNull
-            is JsonObject -> element.str("url", "musicUrl", "src", "playUrl", "link")
-            else -> null
-        }
-        url?.takeIf { it.isNotBlank() } ?: error("音源未返回可播放地址")
     }
 
     // ---------- JSON 解析 ----------
