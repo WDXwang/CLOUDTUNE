@@ -46,19 +46,20 @@ class SourceRepository(context: Context) {
         }
     }
 
-    /** 确保内置官方源已导入（应用首次启动时调用）。 */
+    /** 确保内置官方源已导入（应用首次启动时调用；已导入的旧版本会替换为新版本）。 */
     suspend fun ensureBuiltinSources(context: Context) {
-        val existingIds = _sources.value.map { it.id }.toSet()
-        val assetFiles = listOf("sources/netease_hot.js")
-        for (asset in assetFiles) {
-            if (existingIds.isNotEmpty()) {
-                // 已经有源了，就跳过内置导入（避免重复导入）
-                break
-            }
+        val assetFiles = listOf(
+            "sources/netease_hot.js" to "网易云热歌榜",
+        )
+        for ((asset, builtinName) in assetFiles) {
             runCatching {
                 val scriptText = context.assets.open(asset)
                     .bufferedReader()
                     .use { it.readText() }
+                // 删除已有同名源（允许脚本升级）
+                _sources.value.firstOrNull { it.name == builtinName }?.let { existing ->
+                    store.delete(existing.id)
+                }
                 import(scriptText)
             }
         }
