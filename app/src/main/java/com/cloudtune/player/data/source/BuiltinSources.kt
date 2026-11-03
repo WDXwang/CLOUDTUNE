@@ -1,9 +1,14 @@
 package com.cloudtune.player.data.source
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -16,6 +21,8 @@ import java.util.concurrent.TimeUnit
  * 目前内置：网易云热歌榜（排行榜目录、榜单歌曲、搜索、播放直链）。
  */
 object BuiltinSources {
+
+    private const val TAG = "BuiltinSources"
 
     /** 内置源的唯一标识（匹配 MusicSourceInfo.name） */
     const val NETEASE_HOT_NAME = "网易云热歌榜"
@@ -36,20 +43,24 @@ object BuiltinSources {
 
     /** 拉榜单：boardId=null → 榜单目录；否则 → 该榜单歌曲 */
     suspend fun loadBoard(boardId: String?): Result<SourcePayload> = runCatching {
-        if (boardId.isNullOrBlank()) loadBoardDir() else loadBoardSongs(boardId)
-    }
+        Log.d(TAG, "loadBoard boardId=$boardId")
+        val result = if (boardId.isNullOrBlank()) loadBoardDir() else loadBoardSongs(boardId)
+        Log.d(TAG, "loadBoard result: boards=${result.boards.size}, songs=${result.songs.size}")
+        result
+    }.onFailure { Log.e(TAG, "loadBoard failed", it) }
 
     /** 搜索歌曲 */
     suspend fun search(keyword: String): Result<SourcePayload> = runCatching {
         val url = "https://music.163.com/api/search/get?s=${java.net.URLEncoder.encode(keyword, "UTF-8")}&type=1&limit=30"
         val body = httpGet(url)
+        Log.d(TAG, "search body len=${body.length}")
         val root = json.parseToJsonElement(body).jsonObject
         val result = root["result"]?.jsonObject
-        val songs = result?.get("songs")?.let { arr ->
-            arr.toString().let { parseSongs(it) }
-        }.orEmpty()
+        val songsArr = result?.get("songs")
+        val songs = songsArr?.let { parseSongs(it) }.orEmpty()
+        Log.d(TAG, "search songs=${songs.size}")
         SourcePayload(songs = songs)
-    }
+    }.onFailure { Log.e(TAG, "search failed", it) }
 
     /** 解析播放直链（返回可直接播放的 URL） */
     fun resolveUrl(songId: String): String {
@@ -72,55 +83,63 @@ object BuiltinSources {
     /** 榜单目录：api/toplist → {list: [{id,name,...}]} */
     private suspend fun loadBoardDir(): SourcePayload {
         val body = httpGet("https://music.163.com/api/toplist")
+        Log.d(TAG, "loadBoardDir body len=${body.length}")
         val root = json.parseToJsonElement(body).jsonObject
-        val list = root["list"]?.let { arr -> arr.toString() }
-        val boards = parseBoards(list)
+        val listEl = root["list"]
+        Log.d(TAG, "top-level keys=${root.keys.joinToString(",")}")
+        val boards = listEl?.let { parseBoards(it) }.orEmpty()
+        Log.d(TAG, "boards count=${boards.size}")
         return SourcePayload(boards = boards)
     }
 
-    /** 榜单歌曲：api/playlist/detail?id=XXX → {result: {playlist: {tracks: [...]}} 或 {result: {tracks: [...]}}} */
+    /** 榜单歌曲：api/playlist/detail?id=XXX */
     private suspend fun loadBoardSongs(boardId: String): SourcePayload {
         val body = httpGet("https://music.163.com/api/playlist/detail?id=$boardId")
+        Log.d(TAG, "loadBoardSongs body len=${body.length}")
         val root = json.parseToJsonElement(body).jsonObject
-        val result = root["result"]?.jsonObject ?: return SourcePayload()
-        val tracksJson = when {
-            result.containsKey("tracks") -> result["tracks"]!!.toString()
-            result.containsKey("playlist") -> result["playlist"]?.jsonObject?.get("tracks")?.toString()
+        val result = root["result"]?.jsonObject ?: run {
+            Log.w(TAG, "no result field, top keys=${root.keys.joinToString(",")}")
+            return SourcePayload()
+        }
+        Log.d(TAG, "result keys=${result.keys.joinToString(",")}")
+        // 兼容两种结构：result.tracks（热门榜单）和 result.playlist.tracks（普通歌单）
+        val tracksEl: JsonElement? = when {
+            result.containsKey("tracks") -> result["tracks"]
+            result.containsKey("playlist") -> result["playlist"]?.jsonObject?.get("tracks")
             else -> null
-        } ?: return SourcePayload()
-        return SourcePayload(songs = parseSongs(tracksJson))
+        }
+        if (tracksEl == null) {
+            Log.w(TAG, "no tracks field found in result")
+            return SourcePayload()
+        }
+        val tracks = parseSongs(tracksEl)
+        Log.d(TAG, "tracks parsed=${tracks.size}")
+        return SourcePayload(songs = tracks)
     }
 
-    private fun parseBoards(jsonArray: String?): List<SourceBoard> {
-        if (jsonArray.isNullOrBlank()) return emptyList()
-        return runCatching {
-            val arr = json.parseToJsonElement(jsonArray).let { element ->
-                if (element is kotlinx.serialization.json.JsonArray) element else return@runCatching emptyList()
-                element
-            }
-            arr.mapNotNull { el ->
-                val obj = el as? JsonObject ?: return@mapNotNull null
-                val id = obj["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                val name = obj["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: "榜单"
-                SourceBoard(id = id, name = name)
-            }
-        }.getOrDefault(emptyList())
+    private fun parseBoards(element: JsonElement): List<SourceBoard> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            val id = obj["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val name = obj["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: "榜单"
+            SourceBoard(id = id, name = name)
+        }
     }
 
-    private fun parseSongs(jsonArray: String): List<SourceSong> {
-        if (jsonArray.isBlank()) return emptyList()
-        return runCatching {
-            val arr = json.parseToJsonElement(jsonArray).let { element ->
-                if (element is kotlinx.serialization.json.JsonArray) element else return@runCatching emptyList()
-                element
-            }
-            arr.mapNotNull { el ->
-                val obj = el as? JsonObject ?: return@mapNotNull null
-                val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+    /** 从 JsonElement（应该是 JsonArray）解析歌曲列表，内部吞异常避免整批丢失 */
+    private fun parseSongs(element: JsonElement): List<SourceSong> {
+        val arr = element as? JsonArray ?: run {
+            Log.w(TAG, "parseSongs expected JsonArray, got ${element::class.simpleName}")
+            return emptyList()
+        }
+        return arr.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            runCatching {
+                val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@runCatching null
+                val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@runCatching null
                 val singer = parseArtists(obj)
-                val album = obj["al"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
-                    ?: obj["album"]?.jsonPrimitive?.contentOrNull ?: ""
+                val album = parseAlbum(obj)
                 SourceSong(
                     id = id,
                     name = name,
@@ -128,18 +147,30 @@ object BuiltinSources {
                     album = album,
                     sourceKey = "netease",
                 )
-            }
-        }.getOrDefault(emptyList())
+            }.getOrNull()
+        }
+    }
+
+    private fun parseAlbum(track: JsonObject): String {
+        // 网易云 tracks[].album 是对象 { name, id, ... }， tracks[].al 也可能是对象
+        val obj = (track["al"] as? JsonObject) ?: (track["album"] as? JsonObject)
+        if (obj != null) {
+            val name = obj["name"]?.jsonPrimitive?.contentOrNull
+            if (!name.isNullOrBlank()) return name
+        }
+        // fallback: album 可能是字符串（极少数情况）
+        val strName = track["album"]?.jsonPrimitive?.contentOrNull
+        return strName ?: ""
     }
 
     private fun parseArtists(track: JsonObject): String {
-        // tracks[].ar[] 或 tracks[].artists[]
+        // tracks[].artists[] 是数组，每个元素是 { name, id, ... } 对象
         val artistsKey = if (track.containsKey("ar")) "ar" else "artists"
-        val art = track[artistsKey] as? kotlinx.serialization.json.JsonArray ?: return ""
-        return art.mapNotNull { a ->
+        val artArr = track[artistsKey] as? JsonArray ?: return ""
+        return artArr.mapNotNull { a ->
             when (a) {
                 is JsonObject -> a["name"]?.jsonPrimitive?.contentOrNull
-                is kotlinx.serialization.json.JsonPrimitive -> a.contentOrNull
+                is JsonPrimitive -> a.contentOrNull
                 else -> null
             }
         }.filter { it.isNotBlank() }.joinToString("/")
