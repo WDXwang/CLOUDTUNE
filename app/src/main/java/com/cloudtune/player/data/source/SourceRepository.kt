@@ -46,23 +46,27 @@ class SourceRepository(context: Context) {
         }
     }
 
-    /** 确保内置官方源已导入（应用首次启动时调用；已导入的旧版本会替换为新版本）。 */
+    /** 确保内置官方源已登记（应用启动时调用）。内置源由 Kotlin 原生实现，无需 JS 脚本。 */
     suspend fun ensureBuiltinSources(context: Context) {
-        val assetFiles = listOf(
-            "sources/netease_hot.js" to "网易云热歌榜",
-        )
-        for ((asset, builtinName) in assetFiles) {
+        for (builtin in BuiltinSources.all) {
             runCatching {
-                val scriptText = context.assets.open(asset)
-                    .bufferedReader()
-                    .use { it.readText() }
-                // 删除已有同名源（允许脚本升级）
-                _sources.value.firstOrNull { it.name == builtinName }?.let { existing ->
-                    store.delete(existing.id)
+                if (_sources.value.none { it.name == builtin.name }) {
+                    store.save(
+                        BuiltinSources.PLACEHOLDER_SCRIPT,
+                        MusicSourceInfo(
+                            id = builtin.id,
+                            name = builtin.name,
+                            author = "CloudTune",
+                            version = builtin.version,
+                            sources = builtin.sourceKeys,
+                            actions = builtin.actions,
+                            sourceActions = builtin.sourceKeys.associateWith { builtin.actions },
+                        ),
+                    )
                 }
-                import(scriptText)
             }
         }
+        _sources.value = store.list()
     }
 
     suspend fun refresh() {
@@ -96,7 +100,7 @@ class SourceRepository(context: Context) {
     suspend fun loadBoard(info: MusicSourceInfo, boardId: String?): Result<SourcePayload> = runCatching {
         // 内置源直接走原生实现，绕开 JS 引擎
         if (BuiltinSources.isBuiltin(info.name)) {
-            BuiltinSources.loadBoard(boardId).getOrThrow()
+            BuiltinSources.loadBoard(info.name, boardId).getOrThrow()
         } else {
             val script = store.script(info.id) ?: error("音源脚本文件不存在，请重新导入")
             val sourceKey = info.sources.firstOrNull().orEmpty()
@@ -114,7 +118,7 @@ class SourceRepository(context: Context) {
     /** 用音源脚本搜索歌曲（洛雪扩展 action：`musicSearch` / `search`）。 */
     suspend fun search(info: MusicSourceInfo, keyword: String): Result<SourcePayload> = runCatching {
         if (BuiltinSources.isBuiltin(info.name)) {
-            BuiltinSources.search(keyword).getOrThrow()
+            BuiltinSources.search(info.name, keyword).getOrThrow()
         } else {
             val script = store.script(info.id) ?: error("音源脚本文件不存在，请重新导入")
             val action = when {
@@ -136,7 +140,7 @@ class SourceRepository(context: Context) {
     /** 解析某首歌的播放直链。 */
     suspend fun resolveUrl(info: MusicSourceInfo, song: SourceSong): Result<String> = runCatching {
         if (BuiltinSources.isBuiltin(info.name)) {
-            BuiltinSources.resolveUrl(song.id)
+            BuiltinSources.resolveUrl(info.name, song.id).getOrThrow()
         } else {
             val script = store.script(info.id) ?: error("音源脚本文件不存在，请重新导入")
             val sourceKey = song.sourceKey.ifBlank { info.sources.firstOrNull().orEmpty() }

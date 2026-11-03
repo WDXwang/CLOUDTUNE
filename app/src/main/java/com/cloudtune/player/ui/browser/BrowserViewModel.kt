@@ -10,6 +10,7 @@ import com.cloudtune.player.CloudTuneApp
 import com.cloudtune.player.core.model.CloudFile
 import com.cloudtune.player.core.model.StorageAccount
 import com.cloudtune.player.data.MusicRepository
+import com.cloudtune.player.data.source.BuiltinSources
 import com.cloudtune.player.data.source.MusicSourceInfo
 import com.cloudtune.player.data.source.SourceBoard
 import com.cloudtune.player.data.source.SourceRepository
@@ -90,25 +91,32 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
                     sourceUiState = sourceUiState.copy(loading = false, error = "未导入第三方音源")
                     return@runCatching
                 }
-                // 找支持 leaderboard 的音源加载榜单
-                val boardSource = sources.firstOrNull { it.supports("leaderboard") }
-                val boards = boardSource?.let { src ->
-                    sourceRepository.loadBoard(src, null).getOrNull()?.boards.orEmpty()
-                } ?: emptyList()
-                val firstBoard = boards.firstOrNull()
-                val boardSongs = if (boardSource != null && firstBoard != null) {
-                    sourceRepository.loadBoard(boardSource, firstBoard.id).getOrNull()?.songs.orEmpty().take(10)
-                } else {
-                    emptyList()
+                // 所有声明了 leaderboard 的音源都参与榜单（合并成一条榜单条带）
+                val boardSources = sources.filter { it.supports("leaderboard") }
+                val multiSource = boardSources.size > 1
+                val boards = kotlinx.coroutines.coroutineScope {
+                    boardSources.map { src ->
+                        async {
+                            sourceRepository.loadBoard(src, null).getOrNull()?.boards.orEmpty()
+                                .map { board ->
+                                    board.copy(
+                                        id = encodeBoardId(src.id, board.id),
+                                        // 多音源时在榜单名前加来源，避免重名混淆
+                                        name = if (multiSource) "${sourceLabel(src.name)}·${board.name}" else board.name,
+                                    )
+                                }
+                        }
+                    }.awaitAll().flatten()
                 }
-                // 找支持 musicSearch 的音源加载推荐
+                val firstBoard = boards.firstOrNull()
+                val boardSongs = firstBoard?.let { loadBoardSongs(it) }.orEmpty()
+                // 推荐：找支持搜索的音源
                 val searchSource = sources.firstOrNull { it.supports("musicSearch") || it.supports("search") }
                 val recommendedSongs = searchSource?.let { src ->
                     val keywords = listOf("热歌", "新歌", "流行")
-                    val results = keywords.map { kw ->
+                    keywords.map { kw ->
                         sourceRepository.search(src, kw).getOrNull()?.songs.orEmpty().take(3)
                     }.flatten().distinctBy { it.id }.take(10)
-                    results
                 } ?: emptyList()
 
                 sourceUiState = sourceUiState.copy(
@@ -118,7 +126,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
                     currentBoard = firstBoard,
                     boardSongs = boardSongs,
                     recommendedSongs = recommendedSongs,
-                    error = null,
+                    error = if (boards.isEmpty() && recommendedSongs.isEmpty()) "音源未返回排行榜与推荐数据" else null,
                 )
             }.onFailure { e ->
                 sourceUiState = sourceUiState.copy(loading = false, error = e.message ?: "加载音源数据失败")
@@ -126,9 +134,9 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 播放第三方音源的歌曲 */
+    /** 播放第三方音源的歌曲（按歌曲的 sourceKey 路由回对应音源） */
     fun playSourceSong(song: SourceSong) {
-        val source = sourceUiState.sources.firstOrNull() ?: return
+        val source = sourceForSong(song) ?: return
         viewModelScope.launch {
             val url = runCatching { sourceRepository.resolveUrl(source, song) }.getOrNull()?.getOrNull()
             if (url != null) {
@@ -139,12 +147,37 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 切换当前展示的榜单 */
     fun selectBoard(board: SourceBoard) {
-        val source = sourceUiState.sources.firstOrNull { it.supports("leaderboard") } ?: return
         viewModelScope.launch {
             sourceUiState = sourceUiState.copy(loadingBoard = true)
-            val songs = sourceRepository.loadBoard(source, board.id).getOrNull()?.songs.orEmpty().take(10)
+            val songs = loadBoardSongs(board)
             sourceUiState = sourceUiState.copy(currentBoard = board, boardSongs = songs, loadingBoard = false)
         }
+    }
+
+    /** 榜单 id 里带了音源 id（`sourceId|boardId`），解析后回查对应音源再拉歌曲 */
+    private suspend fun loadBoardSongs(board: SourceBoard): List<SourceSong> {
+        val (sourceId, boardId) = decodeBoardId(board.id)
+        val source = sourceUiState.sources.firstOrNull { it.id == sourceId } ?: return emptyList()
+        return sourceRepository.loadBoard(source, boardId).getOrNull()?.songs.orEmpty().take(10)
+    }
+
+    private fun sourceForSong(song: SourceSong): MusicSourceInfo? {
+        val builtinName = BuiltinSources.nameForSourceKey(song.sourceKey)
+        return sourceUiState.sources.firstOrNull { builtinName != null && it.name == builtinName }
+            ?: sourceUiState.sources.firstOrNull { song.sourceKey.isNotBlank() && it.sources.contains(song.sourceKey) }
+            ?: sourceUiState.sources.firstOrNull()
+    }
+
+    private fun encodeBoardId(sourceId: String, boardId: String): String = "$sourceId|$boardId"
+
+    /** 榜单前缀：网易云热歌榜 → 网易云；酷狗音乐榜 → 酷狗 */
+    private fun sourceLabel(name: String): String =
+        name.replace("音乐", "").replace("热歌榜", "").replace("榜", "")
+
+    private fun decodeBoardId(raw: String): Pair<String, String> {
+        val idx = raw.indexOf('|')
+        return if (idx <= 0) "" to raw
+        else raw.substring(0, idx) to raw.substring(idx + 1)
     }
 
     /** 当前目录（null = 所进入存储的根目录） */
