@@ -31,6 +31,10 @@ class CloudTuneApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        // 首次启动自动导入内置官方源（网易云热歌榜）
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            container.sourceRepository.ensureBuiltinSources(this@CloudTuneApp)
+        }
     }
 }
 

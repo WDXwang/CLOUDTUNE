@@ -106,7 +106,7 @@ fun AppNavigation() {
     // 当前路由，用于决定是否显示底部导航
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = currentRoute in setOf(Routes.PLAYER, Routes.BROWSER, Routes.MINE)
+    val showBottomBar = currentRoute in setOf(Routes.BROWSER, Routes.MINE)
 
     SideDrawer(
         drawerState = drawerState,

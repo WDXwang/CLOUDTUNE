@@ -46,6 +46,24 @@ class SourceRepository(context: Context) {
         }
     }
 
+    /** 确保内置官方源已导入（应用首次启动时调用）。 */
+    suspend fun ensureBuiltinSources(context: Context) {
+        val existingIds = _sources.value.map { it.id }.toSet()
+        val assetFiles = listOf("sources/netease_hot.js")
+        for (asset in assetFiles) {
+            if (existingIds.isNotEmpty()) {
+                // 已经有源了，就跳过内置导入（避免重复导入）
+                break
+            }
+            runCatching {
+                val scriptText = context.assets.open(asset)
+                    .bufferedReader()
+                    .use { it.readText() }
+                import(scriptText)
+            }
+        }
+    }
+
     suspend fun refresh() {
         _sources.value = store.list()
     }
