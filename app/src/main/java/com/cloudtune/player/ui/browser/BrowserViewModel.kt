@@ -10,12 +10,17 @@ import com.cloudtune.player.CloudTuneApp
 import com.cloudtune.player.core.model.CloudFile
 import com.cloudtune.player.core.model.StorageAccount
 import com.cloudtune.player.data.MusicRepository
+import com.cloudtune.player.data.source.MusicSourceInfo
+import com.cloudtune.player.data.source.SourceBoard
+import com.cloudtune.player.data.source.SourceRepository
+import com.cloudtune.player.data.source.SourceSong
 import com.cloudtune.player.player.PlayerControllerManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -32,6 +37,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
 
     private val container = (getApplication<Application>() as CloudTuneApp).container
     private val repository: MusicRepository = container.repository
+    private val sourceRepository: SourceRepository = container.sourceRepository
     private val player: PlayerControllerManager = container.playerManager
 
     /** 当前展示的存储列表（来自持久化账号） */
@@ -44,8 +50,13 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
     private var currentAccountId: String? = null
 
     private var searchJob: Job? = null
+    private var sourceLoadJob: Job? = null
 
     var uiState by mutableStateOf(BrowserUiState())
+        private set
+
+    /** 第三方音源排行榜与推荐状态 */
+    var sourceUiState by mutableStateOf(SourceUiState())
         private set
 
     init {
@@ -64,6 +75,76 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         uiState = uiState.copy(loading = false)
+        // 初始化时加载第三方音源数据
+        loadSourceData()
+    }
+
+    /** 加载第三方音源的排行榜与推荐歌曲 */
+    fun loadSourceData() {
+        sourceLoadJob?.cancel()
+        sourceLoadJob = viewModelScope.launch {
+            sourceUiState = sourceUiState.copy(loading = true, error = null)
+            runCatching {
+                val sources = sourceRepository.sources.first()
+                if (sources.isEmpty()) {
+                    sourceUiState = sourceUiState.copy(loading = false, error = "未导入第三方音源")
+                    return@runCatching
+                }
+                // 找支持 leaderboard 的音源加载榜单
+                val boardSource = sources.firstOrNull { it.supports("leaderboard") }
+                val boards = boardSource?.let { src ->
+                    sourceRepository.loadBoard(src, null).getOrNull()?.boards.orEmpty()
+                } ?: emptyList()
+                val firstBoard = boards.firstOrNull()
+                val boardSongs = if (boardSource != null && firstBoard != null) {
+                    sourceRepository.loadBoard(boardSource, firstBoard.id).getOrNull()?.songs.orEmpty().take(10)
+                } else {
+                    emptyList()
+                }
+                // 找支持 musicSearch 的音源加载推荐
+                val searchSource = sources.firstOrNull { it.supports("musicSearch") || it.supports("search") }
+                val recommendedSongs = searchSource?.let { src ->
+                    val keywords = listOf("热歌", "新歌", "流行")
+                    val results = keywords.map { kw ->
+                        sourceRepository.search(src, kw).getOrNull()?.songs.orEmpty().take(3)
+                    }.flatten().distinctBy { it.id }.take(10)
+                    results
+                } ?: emptyList()
+
+                sourceUiState = sourceUiState.copy(
+                    loading = false,
+                    sources = sources,
+                    boards = boards,
+                    currentBoard = firstBoard,
+                    boardSongs = boardSongs,
+                    recommendedSongs = recommendedSongs,
+                    error = null,
+                )
+            }.onFailure { e ->
+                sourceUiState = sourceUiState.copy(loading = false, error = e.message ?: "加载音源数据失败")
+            }
+        }
+    }
+
+    /** 播放第三方音源的歌曲 */
+    fun playSourceSong(song: SourceSong) {
+        val source = sourceUiState.sources.firstOrNull() ?: return
+        viewModelScope.launch {
+            val url = runCatching { sourceRepository.resolveUrl(source, song) }.getOrNull()?.getOrNull()
+            if (url != null) {
+                player.playUrl(url, song.name, song.artist)
+            }
+        }
+    }
+
+    /** 切换当前展示的榜单 */
+    fun selectBoard(board: SourceBoard) {
+        val source = sourceUiState.sources.firstOrNull { it.supports("leaderboard") } ?: return
+        viewModelScope.launch {
+            sourceUiState = sourceUiState.copy(loadingBoard = true)
+            val songs = sourceRepository.loadBoard(source, board.id).getOrNull()?.songs.orEmpty().take(10)
+            sourceUiState = sourceUiState.copy(currentBoard = board, boardSongs = songs, loadingBoard = false)
+        }
     }
 
     /** 当前目录（null = 所进入存储的根目录） */
@@ -291,7 +372,7 @@ data class BrowserUiState(
     /** 顶部显示的路径名 */
     val pathLabel: String
         get() = when {
-            atHome -> "我的网盘"
+            atHome -> "CloudTune"
             currentDir != null -> currentDir.name
             else -> accountName ?: "/"
         }
@@ -321,3 +402,15 @@ data class BrowserUiState(
     val showAccountCards: Boolean
         get() = atHome && query.isBlank()
 }
+
+/** 第三方音源排行榜与推荐状态 */
+data class SourceUiState(
+    val loading: Boolean = false,
+    val loadingBoard: Boolean = false,
+    val error: String? = null,
+    val sources: List<MusicSourceInfo> = emptyList(),
+    val boards: List<SourceBoard> = emptyList(),
+    val currentBoard: SourceBoard? = null,
+    val boardSongs: List<SourceSong> = emptyList(),
+    val recommendedSongs: List<SourceSong> = emptyList(),
+)

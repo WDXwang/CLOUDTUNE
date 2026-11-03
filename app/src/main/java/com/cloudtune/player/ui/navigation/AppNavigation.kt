@@ -8,6 +8,8 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.DrawerState
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -15,6 +17,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -34,6 +37,7 @@ import com.cloudtune.player.CloudTuneApp
 import com.cloudtune.player.ui.browser.BrowserScreen
 import com.cloudtune.player.ui.components.LoadingBox
 import com.cloudtune.player.ui.components.MiniPlayer
+import com.cloudtune.player.ui.components.SideDrawer
 import com.cloudtune.player.ui.equalizer.EqualizerScreen
 import com.cloudtune.player.ui.favorites.FavoritesScreen
 import com.cloudtune.player.ui.history.HistoryScreen
@@ -79,10 +83,11 @@ object Routes {
 fun AppNavigation() {
     val container = (LocalContext.current.applicationContext as CloudTuneApp).container
     val navController = rememberNavController()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
 
-    // 读取存储列表首值：未添加任何网盘 → setup；否则 → 主界面（播放页）
+    // 读取存储列表首值：未添加任何网盘 → setup；否则 → 主界面（乐库）
     val startRoute by produceState<String?>(initialValue = null) {
-        value = if (container.repository.accounts.first().isEmpty()) Routes.SETUP else Routes.PLAYER
+        value = if (container.repository.accounts.first().isEmpty()) Routes.SETUP else Routes.BROWSER
     }
     if (startRoute == null) {
         LoadingBox()
@@ -101,188 +106,196 @@ fun AppNavigation() {
     // 当前路由，用于决定是否显示底部导航
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = currentRoute in setOf(Routes.BROWSER, Routes.MINE, Routes.SOURCES)
+    val showBottomBar = currentRoute in setOf(Routes.PLAYER, Routes.BROWSER, Routes.MINE)
 
-    Scaffold(
-        bottomBar = {
-            if (showBottomBar) {
-                Column {
-                    // 全局迷你播放条（有播放项时才显示，否则占位为空）
-                    MiniPlayer(onOpenPlayer = { navController.navigate(Routes.PLAYER) })
-                    ShellBottomBar(currentRoute, navTo)
-                }
-            }
+    SideDrawer(
+        drawerState = drawerState,
+        onNavigate = { route ->
+            navController.navigate(route) { launchSingleTop = true }
         },
-    ) { padding ->
-        NavHost(
-            navController = navController,
-            startDestination = startRoute!!,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            // 添加网盘：首次配置进入主界面；从网盘管理页进入则直接返回
-            composable(Routes.SETUP) {
-                SetupScreen(
-                    onConfigured = {
-                        if (navController.previousBackStackEntry != null) {
-                            navController.popBackStack()
-                        } else {
-                            navController.navigate(Routes.BROWSER) {
-                                popUpTo(Routes.SETUP) { inclusive = true }
+    ) {
+        Scaffold(
+            bottomBar = {
+                if (showBottomBar) {
+                    Column {
+                        // 全局迷你播放条（有播放项时才显示，否则占位为空）
+                        MiniPlayer(onOpenPlayer = { navController.navigate(Routes.PLAYER) })
+                        ShellBottomBar(currentRoute, navTo)
+                    }
+                }
+            },
+        ) { padding ->
+            NavHost(
+                navController = navController,
+                startDestination = startRoute!!,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            ) {
+                // 添加网盘：首次配置进入主界面；从网盘管理页进入则直接返回
+                composable(Routes.SETUP) {
+                    SetupScreen(
+                        onConfigured = {
+                            if (navController.previousBackStackEntry != null) {
+                                navController.popBackStack()
+                            } else {
+                                navController.navigate(Routes.BROWSER) {
+                                    popUpTo(Routes.SETUP) { inclusive = true }
+                                }
                             }
-                        }
-                    },
-                    onOpenTianyiWebLogin = {
-                        navController.navigate(Routes.TIANYI_WEB_LOGIN)
-                    },
-                    onOpenTianyiQrLogin = {
-                        navController.navigate(Routes.TIANYI_QR_LOGIN)
-                    },
-                )
-            }
-            // 天翼云盘扫码登录（全屏，原生二维码）
-            composable(Routes.TIANYI_QR_LOGIN) {
-                val previous = navController.previousBackStackEntry
-                // 直接取到设置页的 SetupViewModel，登录成功后同步回填 Cookie，
-                // 不依赖 SavedStateHandle 的异步事件（更可靠）
-                val setupVm: SetupViewModel? =
-                    previous?.let { viewModel(viewModelStoreOwner = it) }
-                TianyiQrLoginScreen(
-                    onBack = { navController.popBackStack() },
-                    onLoggedIn = { result ->
-                        result.sessionKey?.let { sk ->
-                            setupVm?.applyWebLoginSession(
-                                sessionKey = sk,
-                                sessionSecret = result.sessionSecret.orEmpty(),
-                                accessToken = result.accessToken.orEmpty(),
-                                refreshToken = result.refreshToken.orEmpty(),
-                            )
-                        } ?: result.cookie?.let { setupVm?.applyWebLoginCookie(it) }
-                        navController.popBackStack()
-                    },
-                )
-            }
-            // 天翼云盘手机 Web 登录（全屏）
-            composable(Routes.TIANYI_WEB_LOGIN) {
-                // 登录成功回填 Cookie 后返回设置页
-                val previous = navController.previousBackStackEntry
-                val setupVm: SetupViewModel? =
-                    previous?.let { viewModel(viewModelStoreOwner = it) }
-                TianyiWebLoginScreen(
-                    onBack = { navController.popBackStack() },
-                    onLoggedIn = { cookie ->
-                        setupVm?.applyWebLoginCookie(cookie)
-                        navController.popBackStack()
-                    },
-                )
-            }
-            // 文件（多网盘聚合首页）
-            composable(Routes.BROWSER) {
-                BrowserScreen(
-                    onOpenPlayer = { navController.navigate(Routes.PLAYER) },
-                    onOpenStorages = { navController.navigate(Routes.STORAGES) },
-                )
-            }
-            // 我的（主入口：收藏 / 本地 / 歌单 / 历史 / 网盘 / 音源 / 设置）
-            composable(Routes.MINE) {
-                MineScreen(
-                    onOpenRoute = { route ->
-                        navController.navigate(route) { launchSingleTop = true }
-                    },
-                )
-            }
-            // 音源管理（全屏）
-            composable(Routes.SOURCES) {
-                SourcesScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenPlayer = { navController.navigate(Routes.PLAYER) },
-                )
-            }
-            // 网盘管理（全屏）
-            composable(Routes.STORAGES) {
-                StoragesScreen(
-                    onBack = { navController.popBackStack() },
-                    onAdd = { navController.navigate(Routes.SETUP) },
-                )
-            }
-            // 本地音乐
-            composable(Routes.LOCAL) {
-                LocalScreen(onOpenPlayer = { navController.navigate(Routes.PLAYER) })
-            }
-            // 歌单
-            composable(Routes.PLAYLISTS) {
-                PlaylistsScreen(onOpenPlaylist = { id, name ->
-                    val encoded = java.net.URLEncoder.encode(name, "UTF-8")
-                    navController.navigate("playlist/$id?name=$encoded")
-                })
-            }
-            // 歌单详情（全屏）
-            composable(
-                route = Routes.PLAYLIST_DETAIL,
-                arguments = listOf(
-                    navArgument("playlistId") { type = NavType.LongType },
-                    navArgument("name") { type = NavType.StringType },
-                ),
-            ) { entry ->
-                val id = entry.arguments?.getLong("playlistId") ?: -1L
-                val name = entry.arguments?.getString("name") ?: "歌单"
-                PlaylistDetailScreen(
-                    onBack = { navController.popBackStack() },
-                    onDeleted = { navController.popBackStack() },
-                    playlistName = name,
-                )
-            }
-            // 收藏
-            composable(Routes.FAVORITES) {
-                FavoritesScreen(onOpenPlayer = { navController.navigate(Routes.PLAYER) })
-            }
-            // 设置
-            composable(Routes.SETTINGS) {
-                SettingsScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenStorages = { navController.navigate(Routes.STORAGES) },
-                    onOpenEqualizer = { navController.navigate(Routes.EQUALIZER) },
-                    onOpenHistory = { navController.navigate(Routes.HISTORY) },
-                    onLoggedOut = {
-                        // 退出登录后回到配置页，清空整个返回栈
-                        navController.navigate(Routes.SETUP) {
-                            popUpTo(navController.graph.id) { inclusive = true }
-                        }
-                    },
-                )
-            }
-            // 均衡器（全屏）
-            composable(Routes.EQUALIZER) {
-                EqualizerScreen(onBack = { navController.popBackStack() })
-            }
-            // 正在播放（主界面：深色播放页 + 底部导航 + 右下角隐藏式队列）
-            composable(Routes.PLAYER) {
-                PlayerScreen(
-                    onNavigate = navTo,
-                    onOpenLyrics = { navController.navigate(Routes.LYRICS) },
-                )
-            }
-            // 播放队列（全屏）
-            composable(Routes.QUEUE) {
-                QueueScreen(onBack = { navController.popBackStack() })
-            }
-            // 歌词（全屏）
-            composable(Routes.LYRICS) {
-                LyricsScreen(onBack = { navController.popBackStack() })
-            }
-            // 历史播放（全屏）
-            composable(Routes.HISTORY) {
-                HistoryScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenPlayer = { navController.navigate(Routes.PLAYER) },
-                )
+                        },
+                        onOpenTianyiWebLogin = {
+                            navController.navigate(Routes.TIANYI_WEB_LOGIN)
+                        },
+                        onOpenTianyiQrLogin = {
+                            navController.navigate(Routes.TIANYI_QR_LOGIN)
+                        },
+                    )
+                }
+                // 天翼云盘扫码登录（全屏，原生二维码）
+                composable(Routes.TIANYI_QR_LOGIN) {
+                    val previous = navController.previousBackStackEntry
+                    // 直接取到设置页的 SetupViewModel，登录成功后同步回填 Cookie，
+                    // 不依赖 SavedStateHandle 的异步事件（更可靠）
+                    val setupVm: SetupViewModel? =
+                        previous?.let { viewModel(viewModelStoreOwner = it) }
+                    TianyiQrLoginScreen(
+                        onBack = { navController.popBackStack() },
+                        onLoggedIn = { result ->
+                            result.sessionKey?.let { sk ->
+                                setupVm?.applyWebLoginSession(
+                                    sessionKey = sk,
+                                    sessionSecret = result.sessionSecret.orEmpty(),
+                                    accessToken = result.accessToken.orEmpty(),
+                                    refreshToken = result.refreshToken.orEmpty(),
+                                )
+                            } ?: result.cookie?.let { setupVm?.applyWebLoginCookie(it) }
+                            navController.popBackStack()
+                        },
+                    )
+                }
+                // 天翼云盘手机 Web 登录（全屏）
+                composable(Routes.TIANYI_WEB_LOGIN) {
+                    // 登录成功回填 Cookie 后返回设置页
+                    val previous = navController.previousBackStackEntry
+                    val setupVm: SetupViewModel? =
+                        previous?.let { viewModel(viewModelStoreOwner = it) }
+                    TianyiWebLoginScreen(
+                        onBack = { navController.popBackStack() },
+                        onLoggedIn = { cookie ->
+                            setupVm?.applyWebLoginCookie(cookie)
+                            navController.popBackStack()
+                        },
+                    )
+                }
+                // 文件（多网盘聚合首页 + 主入口）
+                composable(Routes.BROWSER) {
+                    BrowserScreen(
+                        onOpenPlayer = { navController.navigate(Routes.PLAYER) },
+                        onOpenStorages = { navController.navigate(Routes.STORAGES) },
+                        drawerState = drawerState,
+                    )
+                }
+                // 我的（辅助入口）
+                composable(Routes.MINE) {
+                    MineScreen(
+                        onOpenRoute = { route ->
+                            navController.navigate(route) { launchSingleTop = true }
+                        },
+                    )
+                }
+                // 音源管理（全屏）
+                composable(Routes.SOURCES) {
+                    SourcesScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenPlayer = { navController.navigate(Routes.PLAYER) },
+                    )
+                }
+                // 网盘管理（全屏）
+                composable(Routes.STORAGES) {
+                    StoragesScreen(
+                        onBack = { navController.popBackStack() },
+                        onAdd = { navController.navigate(Routes.SETUP) },
+                    )
+                }
+                // 本地音乐
+                composable(Routes.LOCAL) {
+                    LocalScreen(onOpenPlayer = { navController.navigate(Routes.PLAYER) })
+                }
+                // 歌单
+                composable(Routes.PLAYLISTS) {
+                    PlaylistsScreen(onOpenPlaylist = { id, name ->
+                        val encoded = java.net.URLEncoder.encode(name, "UTF-8")
+                        navController.navigate("playlist/$id?name=$encoded")
+                    })
+                }
+                // 歌单详情（全屏）
+                composable(
+                    route = Routes.PLAYLIST_DETAIL,
+                    arguments = listOf(
+                        navArgument("playlistId") { type = NavType.LongType },
+                        navArgument("name") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    val id = entry.arguments?.getLong("playlistId") ?: -1L
+                    val name = entry.arguments?.getString("name") ?: "歌单"
+                    PlaylistDetailScreen(
+                        onBack = { navController.popBackStack() },
+                        onDeleted = { navController.popBackStack() },
+                        playlistName = name,
+                    )
+                }
+                // 收藏
+                composable(Routes.FAVORITES) {
+                    FavoritesScreen(onOpenPlayer = { navController.navigate(Routes.PLAYER) })
+                }
+                // 设置
+                composable(Routes.SETTINGS) {
+                    SettingsScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenStorages = { navController.navigate(Routes.STORAGES) },
+                        onOpenEqualizer = { navController.navigate(Routes.EQUALIZER) },
+                        onOpenHistory = { navController.navigate(Routes.HISTORY) },
+                        onLoggedOut = {
+                            // 退出登录后回到配置页，清空整个返回栈
+                            navController.navigate(Routes.SETUP) {
+                                popUpTo(navController.graph.id) { inclusive = true }
+                            }
+                        },
+                    )
+                }
+                // 均衡器（全屏）
+                composable(Routes.EQUALIZER) {
+                    EqualizerScreen(onBack = { navController.popBackStack() })
+                }
+                // 正在播放（主界面：深色播放页 + 底部导航 + 右下角隐藏式队列）
+                composable(Routes.PLAYER) {
+                    PlayerScreen(
+                        onNavigate = navTo,
+                        onOpenLyrics = { navController.navigate(Routes.LYRICS) },
+                    )
+                }
+                // 播放队列（全屏）
+                composable(Routes.QUEUE) {
+                    QueueScreen(onBack = { navController.popBackStack() })
+                }
+                // 歌词（全屏）
+                composable(Routes.LYRICS) {
+                    LyricsScreen(onBack = { navController.popBackStack() })
+                }
+                // 历史播放（全屏）
+                composable(Routes.HISTORY) {
+                    HistoryScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenPlayer = { navController.navigate(Routes.PLAYER) },
+                    )
+                }
             }
         }
     }
 }
 
-/** 底部导航栏（汽水音乐风格：首页 / 乐库 / 音源 / 我的 四个主入口） */
+/** 底部导航栏：首页 / 乐库 / 我的 三个主入口 */
 @Composable
 fun ShellBottomBar(
     currentRoute: String?,
@@ -291,7 +304,6 @@ fun ShellBottomBar(
     val items = listOf(
         Triple(Routes.PLAYER, "首页", Icons.Filled.Home),
         Triple(Routes.BROWSER, "乐库", Icons.Filled.LibraryMusic),
-        Triple(Routes.SOURCES, "音源", Icons.Filled.Extension),
         Triple(Routes.MINE, "我的", Icons.Filled.Person),
     )
     NavigationBar(
