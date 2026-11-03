@@ -129,8 +129,8 @@ class SourceRepository(context: Context) {
         }
     }
 
-    /** 用音源脚本搜索歌曲（洛雪扩展 action：`musicSearch` / `search`）。 */
-    suspend fun search(info: MusicSourceInfo, keyword: String): Result<SourcePayload> = runCatching {
+    /** 用音源脚本搜索歌曲（洛雪扩展 action：`musicSearch` / `search`）。[sourceKey] 显式指定聚合源内子源。 */
+    suspend fun search(info: MusicSourceInfo, keyword: String, sourceKey: String? = null): Result<SourcePayload> = runCatching {
         if (BuiltinSources.isBuiltin(info.name)) {
             BuiltinSources.search(info.name, keyword).getOrThrow()
         } else {
@@ -140,14 +140,14 @@ class SourceRepository(context: Context) {
                 info.supports(ACTION_SEARCH) -> ACTION_SEARCH
                 else -> error("该音源未提供搜索接口（仅支持解析播放地址），无法搜索歌曲")
             }
-            val sourceKey = info.sourceFor(action)
+            val key = sourceKey ?: info.sourceFor(action) ?: info.sources.firstOrNull().orEmpty()
             val infoJson = buildString {
                 append("{\"keyword\":").append(quoted(keyword))
                 append(",\"text\":").append(quoted(keyword))
                 append(",\"page\":1,\"limit\":30}")
             }
-            val raw = engine.call(script, action, sourceKey, infoJson).getOrThrow()
-            parsePayload(raw)
+            val raw = engine.call(script, action, key, infoJson).getOrThrow()
+            parsePayload(raw, key)
         }
     }
 
@@ -183,7 +183,15 @@ class SourceRepository(context: Context) {
 
     // ---------- JSON 解析 ----------
 
-    private fun parsePayload(raw: String): SourcePayload {
+    private fun parsePayload(raw: String, defaultSourceKey: String = ""): SourcePayload {
+        val payload = parsePayloadInner(raw)
+        if (defaultSourceKey.isBlank()) return payload
+        return payload.copy(
+            songs = payload.songs.map { if (it.sourceKey.isBlank()) it.copy(sourceKey = defaultSourceKey) else it },
+        )
+    }
+
+    private fun parsePayloadInner(raw: String): SourcePayload {
         val root = runCatching { json.parseToJsonElement(raw) }.getOrNull() ?: return SourcePayload()
         return when (root) {
             is JsonArray -> {

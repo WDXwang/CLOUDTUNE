@@ -62,8 +62,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
     /** 汽水伪榜单：关键词即榜单名 */
     private val QISHUI_KEYWORDS = listOf("热歌", "新歌", "飙升")
 
-    /** 判定汽水源的 key 片段 */
-    private val QISHUI_HINTS = listOf("汽水", "qishui", "qsd", "soda")
+    /** 判定汽水源的 key 片段（聚合脚本里汽水 key 常见取值，含 qsvip） */
+    private val QISHUI_HINTS = listOf("汽水", "qishui", "qsvip", "qsd", "soda")
 
     /** 伪榜单 id 前缀 */
     private val PSEUDO_PREFIX = "pseudo:"
@@ -103,8 +103,10 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         uiState = uiState.copy(loading = false)
-        // 初始化时加载第三方音源数据
-        loadSourceData()
+        // 第三方音源列表变化（导入 / 删除 / 内置源异步导入完成）时自动刷新榜单与推荐
+        viewModelScope.launch {
+            sourceRepository.sources.collectLatest { loadSourceData() }
+        }
     }
 
     /** 加载第三方音源的排行榜与推荐歌曲 */
@@ -137,7 +139,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
                 }.toMutableList()
 
                 // 汽水音乐没有公开榜单接口，用其搜索能力拼成伪榜单
-                qishuiSource(sources)?.let { src ->
+                qishuiTarget(sources)?.let { (src, key) ->
                     boards += QISHUI_KEYWORDS.map { keyword ->
                         SourceBoard(
                             id = encodePseudoBoardId(src.id, keyword),
@@ -175,6 +177,11 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
                     categories = categories,
                     currentBoard = firstBoard,
                     boardSongs = boardSongs,
+                    boardError = if (boards.isNotEmpty() && boardSongs.isEmpty()) {
+                        "该榜单暂无歌曲：音源接口可能不可用、超时或未返回数据"
+                    } else {
+                        null
+                    },
                     recommendedSongs = recommendedSongs,
                     error = if (boards.isEmpty() && recommendedSongs.isEmpty()) "音源未返回排行榜与推荐数据" else null,
                 )
@@ -198,9 +205,14 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
     /** 切换当前展示的榜单 */
     fun selectBoard(board: SourceBoard) {
         viewModelScope.launch {
-            sourceUiState = sourceUiState.copy(loadingBoard = true)
+            sourceUiState = sourceUiState.copy(loadingBoard = true, boardError = null)
             val songs = loadBoardSongs(board)
-            sourceUiState = sourceUiState.copy(currentBoard = board, boardSongs = songs, loadingBoard = false)
+            sourceUiState = sourceUiState.copy(
+                currentBoard = board,
+                boardSongs = songs,
+                loadingBoard = false,
+                boardError = if (songs.isEmpty()) "该榜单暂无歌曲：音源接口可能不可用、超时或未返回数据" else null,
+            )
         }
     }
 
@@ -217,23 +229,35 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
         // 汽水伪榜单：用搜索关键词出歌，按热度降序（接口不带热度时保留原有顺序）
         if (boardId.startsWith(PSEUDO_PREFIX)) {
             val keyword = boardId.removePrefix(PSEUDO_PREFIX)
-            val songs = sourceRepository.search(source, keyword).getOrNull()?.songs.orEmpty()
-            return songs.distinctBy { it.id }
+            // 显式用探测到的汽水子源 key 搜索，并把 key 写回歌曲，播放时路由回该子源
+            val key = qishuiTarget(sourceUiState.sources)?.second
+                ?: source.sourceFor("musicSearch") ?: return emptyList()
+            val songs = sourceRepository.search(source, keyword, key).getOrNull()?.songs.orEmpty()
+            return songs.asSequence()
+                .distinctBy { it.id }
+                .map { if (it.sourceKey.isBlank()) it.copy(sourceKey = key) else it }
                 .sortedByDescending { heatOf(it) }
                 .take(BOARD_SONG_LIMIT)
+                .toList()
         }
         return sourceRepository.loadBoard(source, boardId).getOrNull()?.songs.orEmpty().take(BOARD_SONG_LIMIT)
     }
 
-    /** 找出带汽水音乐搜索能力的音源（聚合脚本里汽水源的 key 常为 qishui / qsd / 汽水） */
-    private fun qishuiSource(sources: List<MusicSourceInfo>): MusicSourceInfo? =
-        sources.firstOrNull { src ->
-            val searchable = src.sourceActions.entries
+    /**
+     * 探测（音源, 子源 key）：具备搜索能力、可作为汽水伪榜单数据来源的聚合源。
+     * 优先 key 命中汽水暗示（qsvip / qishui / 汽水…），否则取第一个有搜索能力的非内置源。
+     */
+    private fun qishuiTarget(sources: List<MusicSourceInfo>): Pair<MusicSourceInfo, String>? {
+        val candidates = sources.flatMap { src ->
+            val keys = src.sourceActions.entries
                 .filter { (_, acts) -> acts.contains("musicSearch") || acts.contains("search") }
                 .map { it.key }
                 .ifEmpty { src.sources }
-            searchable.any { key -> QISHUI_HINTS.any { hint -> key.contains(hint, ignoreCase = true) } }
-        }
+            keys.map { src to it }
+        }.filter { (src, _) -> !BuiltinSources.isBuiltin(src.name) }
+        return candidates.firstOrNull { (_, key) -> QISHUI_HINTS.any { key.lowercase().contains(it) } }
+            ?: candidates.firstOrNull()
+    }
 
     /** 从歌曲原始 JSON 中取热度字段，用于伪榜单排序 */
     private fun heatOf(song: SourceSong): Long {
@@ -531,6 +555,8 @@ data class SourceUiState(
     val loading: Boolean = false,
     val loadingBoard: Boolean = false,
     val error: String? = null,
+    /** 当前榜单拉取失败 / 为空时的提示 */
+    val boardError: String? = null,
     val sources: List<MusicSourceInfo> = emptyList(),
     val boards: List<SourceBoard> = emptyList(),
     /** 榜单 id → 分类（来源名，如 网易云 / 酷狗 / 汽水） */

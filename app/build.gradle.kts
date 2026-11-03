@@ -39,8 +39,8 @@ android {
         applicationId = "com.cloudtune.player"
         minSdk = 26
         targetSdk = 34
-        versionCode = 27
-        versionName = "1.8.15"
+        versionCode = 28
+        versionName = "1.8.16"
         vectorDrawables { useSupportLibrary = true }
     }
 

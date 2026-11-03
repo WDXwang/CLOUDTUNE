@@ -298,14 +298,24 @@ private fun HomeContent(
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    // 榜单歌曲列表（横向）
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(sourceState.boardSongs, key = { it.id }) { song ->
-                            SongCard(
-                                song = song,
-                                onClick = { onSourceSongClick(song) },
-                                colors = colors,
-                            )
+                    // 榜单歌曲列表（横向）；为空时给出明确原因提示
+                    if (sourceState.boardSongs.isEmpty()) {
+                        Text(
+                            text = sourceState.boardError
+                                ?: if (sourceState.loadingBoard) "正在加载榜单歌曲…" else "该榜单暂无歌曲",
+                            fontSize = 13.sp,
+                            color = colors.sub,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    } else {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(sourceState.boardSongs, key = { it.id }) { song ->
+                                SongCard(
+                                    song = song,
+                                    onClick = { onSourceSongClick(song) },
+                                    colors = colors,
+                                )
+                            }
                         }
                     }
                 }
