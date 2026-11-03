@@ -77,6 +77,9 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
     /** 每个榜单展示的歌曲数 */
     private val BOARD_SONG_LIMIT = 10
 
+    /** 分类行里的「全部」选项 */
+    private val CATEGORY_ALL = "全部"
+
     var uiState by mutableStateOf(BrowserUiState())
         private set
 
@@ -142,6 +145,17 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     }
                 }
+                // 每个榜单归属一个分类（取名字里 "·" 前缀），用于分类过滤行
+                val categoryMap = boards.associate { board ->
+                    board.id to board.name.substringBefore("·", missingDelimiterValue = "其他")
+                }.toMutableMap()
+                // 单音源无前缀时归入其来源名
+                if (boardSources.size == 1) {
+                    val label = sourceLabel(boardSources.first().name)
+                    boards.forEach { board -> if (categoryMap[board.id] == "其他") categoryMap[board.id] = label }
+                }
+                val categories = listOf(CATEGORY_ALL) +
+                    boards.map { categoryMap[it.id].orEmpty() }.distinct().filter { it.isNotBlank() }
                 val firstBoard = boards.firstOrNull()
                 val boardSongs = firstBoard?.let { loadBoardSongs(it) }.orEmpty()
                 // 推荐：找支持搜索的音源
@@ -157,6 +171,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
                     loading = false,
                     sources = sources,
                     boards = boards,
+                    boardCategories = categoryMap,
+                    categories = categories,
                     currentBoard = firstBoard,
                     boardSongs = boardSongs,
                     recommendedSongs = recommendedSongs,
@@ -186,6 +202,12 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
             val songs = loadBoardSongs(board)
             sourceUiState = sourceUiState.copy(currentBoard = board, boardSongs = songs, loadingBoard = false)
         }
+    }
+
+    /** 切换榜单分类（null 或「全部」表示不过滤） */
+    fun selectCategory(category: String?) {
+        val next = category?.takeIf { it != CATEGORY_ALL }
+        sourceUiState = sourceUiState.copy(selectedCategory = next)
     }
 
     /** 榜单 id 里带了音源 id（`sourceId|boardId`），解析后回查对应音源再拉歌曲 */
@@ -511,6 +533,12 @@ data class SourceUiState(
     val error: String? = null,
     val sources: List<MusicSourceInfo> = emptyList(),
     val boards: List<SourceBoard> = emptyList(),
+    /** 榜单 id → 分类（来源名，如 网易云 / 酷狗 / 汽水） */
+    val boardCategories: Map<String, String> = emptyMap(),
+    /** 分类行选项（首项固定「全部」） */
+    val categories: List<String> = emptyList(),
+    /** 当前选中的分类；null = 全部 */
+    val selectedCategory: String? = null,
     val currentBoard: SourceBoard? = null,
     val boardSongs: List<SourceSong> = emptyList(),
     val recommendedSongs: List<SourceSong> = emptyList(),

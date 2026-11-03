@@ -46,7 +46,7 @@ class SourceRepository(context: Context) {
         }
     }
 
-    /** 确保内置官方源已登记（应用启动时调用）。内置源由 Kotlin 原生实现，无需 JS 脚本。 */
+    /** 确保内置官方源已登记（应用启动时调用）。原生源无脚本；JS 型内置源从 assets 导入。 */
     suspend fun ensureBuiltinSources(context: Context) {
         for (builtin in BuiltinSources.all) {
             runCatching {
@@ -63,6 +63,20 @@ class SourceRepository(context: Context) {
                             sourceActions = builtin.sourceKeys.associateWith { builtin.actions },
                         ),
                     )
+                }
+            }
+        }
+        // JS 型内置源：与用户手动导入走同一条引擎链路（已导入同名源时跳过）
+        val jsBuiltins = listOf(
+            "sources/quandouyao.js" to "全豆要",
+        )
+        for ((asset, nameHint) in jsBuiltins) {
+            runCatching {
+                if (_sources.value.none { it.name.contains(nameHint) }) {
+                    val scriptText = context.assets.open(asset)
+                        .bufferedReader()
+                        .use { it.readText() }
+                    import(scriptText)
                 }
             }
         }

@@ -187,6 +187,7 @@ fun BrowserScreen(
                             sourceState = sourceState,
                             onSourceSongClick = { viewModel.playSourceSong(it); onOpenPlayer() },
                             onBoardClick = { viewModel.selectBoard(it) },
+                            onCategoryClick = { viewModel.selectCategory(it) },
                             onRefreshSource = { viewModel.loadSourceData() },
                             accounts = state.accounts,
                             onOpenAccount = { viewModel.openAccount(it) },
@@ -208,6 +209,7 @@ private fun HomeContent(
     sourceState: SourceUiState,
     onSourceSongClick: (SourceSong) -> Unit,
     onBoardClick: (SourceBoard) -> Unit,
+    onCategoryClick: (String) -> Unit,
     onRefreshSource: () -> Unit,
     accounts: List<StorageAccount>,
     onOpenAccount: (StorageAccount) -> Unit,
@@ -261,9 +263,29 @@ private fun HomeContent(
                         color = colors.text,
                     )
                     Spacer(Modifier.height(8.dp))
-                    // 榜单切换 chip
+                    // 分类行（全部 / 网易云 / 酷狗 / 汽水 …）
+                    if (sourceState.categories.size > 2) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(sourceState.categories, key = { it }) { category ->
+                                FilterChip(
+                                    selected = (sourceState.selectedCategory ?: "全部") == category,
+                                    onClick = { onCategoryClick(category) },
+                                    label = { Text(category, fontSize = 13.sp, fontWeight = FontWeight.Bold) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = colors.text,
+                                        selectedLabelColor = colors.bg,
+                                    ),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    // 榜单切换 chip（按当前分类过滤）
+                    val visibleBoards = sourceState.selectedCategory?.let { selected ->
+                        sourceState.boards.filter { sourceState.boardCategories[it.id] == selected }
+                    } ?: sourceState.boards
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(sourceState.boards, key = { it.id }) { board ->
+                        items(visibleBoards, key = { it.id }) { board ->
                             FilterChip(
                                 selected = board.id == sourceState.currentBoard?.id,
                                 onClick = { onBoardClick(board) },
