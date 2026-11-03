@@ -1,7 +1,7 @@
 /**
  * @name 网易云热歌榜
  * @author CloudTune
- * @version 1.1.0
+ * @version 1.1.1
  * @description 内置官方源，提供网易云音乐排行榜、搜索与播放解析
  */
 
@@ -19,17 +19,20 @@ lx.send('inited', {
 });
 
 const UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
-const COMMON_HEADERS = { 'User-Agent': UA, 'Referer': 'https://music.163.com/' };
 
-// 把 lx.request 包成 Promise
+// PRELUDE 中 lx.request 签名是：request(urlString, optionsObject, callback)
+// 不是 request({url, headers}, callback)！这里第一个参数必须是 URL 字符串
 function httpGet(url) {
     return new Promise(function (resolve, reject) {
-        lx.request({ url: url, headers: COMMON_HEADERS }, function (err, res) {
-            if (err) { reject(err); return; }
-            // res.body 是返回体字符串；如果没有 body 可能 Android bridge 直接给了 body 内容
-            var body = res.body !== undefined ? res.body : res;
-            resolve(typeof body === 'string' ? body : JSON.stringify(body));
-        });
+        lx.request(
+            url,
+            { headers: { 'User-Agent': UA, 'Referer': 'https://music.163.com/' } },
+            function (err, res) {
+                if (err) { reject(err); return; }
+                var body = res.body !== undefined ? res.body : res;
+                resolve(typeof body === 'string' ? body : JSON.stringify(body));
+            }
+        );
     });
 }
 
@@ -56,7 +59,6 @@ function handleLeaderboard(info) {
         return httpGet('https://music.163.com/api/toplist').then(function (body) {
             var json;
             try { json = JSON.parse(body); } catch (e) { return { list: [] }; }
-            // 榜单列表在顶层 list 字段
             var list = json.list || [];
             var boards = list.map(function (item) {
                 return { id: String(item.id), name: item.name || ('榜单 ' + item.id) };
@@ -70,9 +72,6 @@ function handleLeaderboard(info) {
     return httpGet('https://music.163.com/api/playlist/detail?id=' + boardId).then(function (body) {
         var json;
         try { json = JSON.parse(body); } catch (e) { return { list: [] }; }
-        // 网易云返回两种结构：
-        // 热门榜单（toplist）：{ result: { tracks: [...] } }
-        // 普通歌单：         { result: { playlist: { tracks: [...] } } }
         var result = json.result || {};
         var tracks = result.tracks;
         if (!tracks && result.playlist) tracks = result.playlist.tracks;
